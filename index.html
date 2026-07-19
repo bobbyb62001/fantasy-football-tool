@@ -166,6 +166,21 @@
   .ac-item small{color:var(--chalk-dim); flex:0 0 auto;}
   .sync-row select, .sync-row input{max-width:220px;}
   #connectBtn.connected{background:var(--red); border-color:var(--red);}
+  .badge.bye{background:rgba(245,243,237,0.06); color:var(--chalk-dim); border:1px solid var(--line-strong);}
+  .roster-tools{display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:8px;}
+  .roster-tools label{font-size:12px; color:var(--chalk-dim); display:flex; align-items:center; gap:5px;}
+  .roster-tools input[type=text]{width:44px; padding:5px 6px; min-width:0; flex:0 0 auto; text-align:center;}
+  .slot .meta{color:var(--chalk-dim); font-size:10px; margin-top:2px;}
+  #byeWarning{color:var(--red); line-height:1.6;}
+  .badge.need{background:rgba(232,163,61,0.18); color:var(--amber); border:1px solid rgba(232,163,61,0.5); font-weight:700;}
+  .tier-divider{font-size:10px; color:var(--chalk-dim); text-align:center; padding:6px 0; letter-spacing:2px; text-transform:uppercase; opacity:.55;}
+  .best-avail{display:flex; gap:8px; overflow-x:auto; padding:2px 2px 8px; margin-top:12px; -webkit-overflow-scrolling:touch;}
+  .best-avail .bcard{flex:0 0 auto; background:var(--panel-2); border:1px solid var(--line-strong); border-radius:3px; padding:9px 11px; min-width:118px;}
+  .best-avail .bcard .pos{font-family:'Teko',sans-serif; font-size:14px; color:var(--turf-bright); letter-spacing:1px;}
+  .best-avail .bcard .nm{font-size:12px; font-weight:600; margin-top:2px; color:var(--chalk);}
+  .best-avail .bcard .rk{font-size:10px; color:var(--chalk-dim); margin-top:2px;}
+  .best-avail .bcard button{margin-top:7px; width:100%;}
+  .best-avail .bcard.avoid{opacity:.45;}
   @media (max-width:640px){
     .vs-grid{grid-template-columns:1fr; }
     .vs-mid{padding-top:0; text-align:center;}
@@ -206,26 +221,49 @@
         </select>
         <input type="text" id="draftIdInput" placeholder="Sleeper draft ID" style="display:none;">
         <input type="text" id="mySlotInput" placeholder="My draft slot # (optional)" style="display:none;">
+        <input type="text" id="espnLeagueIdInput" placeholder="ESPN league ID" style="display:none;">
+        <input type="text" id="espnYearInput" placeholder="Season year" style="display:none;">
+        <input type="text" id="espnTeamIdInput" placeholder="My ESPN team ID (optional)" style="display:none;">
         <button class="btn primary" id="connectBtn" style="display:none;">Connect</button>
       </div>
       <div class="status-line" id="syncNote">Pick a site above. Sleeper drafts can sync live and auto-remove picked players from the pool below; other sites are marked manually with "Mark taken" as picks happen.</div>
+      <div class="row sync-row" style="margin-top:10px;">
+        <input type="text" id="leagueLabelInput" placeholder="League label (optional — saves separately)">
+        <select id="strategySelect">
+          <option value="bpa">Strategy: Best Player Available</option>
+          <option value="hero-rb">Strategy: Hero RB</option>
+          <option value="zero-rb">Strategy: Zero RB</option>
+          <option value="robust-rb">Strategy: Robust RB</option>
+        </select>
+      </div>
+      <div class="status-line" id="strategyNote"></div>
     </div>
 
     <div class="row" style="margin-top:16px;">
       <input type="text" id="searchInput" placeholder="Search player or team...">
       <select id="sortSelect">
+        <option value="rank">Sort: Best Available (Rank)</option>
         <option value="buzz">Sort: Buzz (trending adds)</option>
         <option value="name">Sort: Name</option>
         <option value="pos">Sort: Position</option>
       </select>
     </div>
+    <div class="status-line" id="clockStatus"></div>
+    <div class="best-avail" id="bestAvail"></div>
     <div class="pos-filters" id="posFilters"></div>
     <div class="status-line" id="poolStatus">Loading player pool…</div>
 
     <div class="chains">
       <div class="head"><h3>MY ROSTER</h3><span id="rosterCount">0 / 15 filled</span></div>
-      <div class="chain-track" id="chainTrack"></div>
+      <div class="roster-tools">
+        <label>League size <input type="text" id="leagueSizeInput" value="12"></label>
+        <button class="btn mini" id="undoBtn" disabled>Undo last pick</button>
+        <button class="btn mini" id="copyRosterBtn">Copy roster</button>
+        <button class="btn mini" id="resetBtn">Reset draft</button>
+      </div>
+      <div class="chain-track" id="chainTrack" style="margin-top:10px;"></div>
       <div class="roster-grid" id="rosterGrid"></div>
+      <div class="status-line" id="byeWarning"></div>
     </div>
 
     <ul class="plist" id="playerList"></ul>
@@ -259,6 +297,8 @@
 const POSITIONS = ['QB','RB','WR','TE','K','DEF'];
 const ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN'];
 const FLEX_ELIGIBLE = ['RB','WR','TE'];
+const NFL_TEAMS = ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SEA','SF','TB','TEN','WAS'];
+const STORAGE_KEY = 'chains_ff_v1';
 
 const STATE = {
   players: {},        // id -> player obj (filtered pool)
@@ -267,6 +307,10 @@ const STATE = {
   trendingDrop: {},    // id -> count
   drafted: new Set(),  // ids marked drafted by anyone
   roster: new Array(ROSTER_SLOTS.length).fill(null), // slot index -> player id
+  rosterMeta: new Array(ROSTER_SLOTS.length).fill(null), // slot index -> {round, keepCost}
+  history: [], // undo stack: {type:'roster'|'taken', id, slotIdx}
+  byeWeeks: {}, // team abbr -> week number
+  espnToSleeper: {}, // espn player id (string) -> sleeper player id
   scoreboard: null,
   posFilter: 'ALL',
   activeTab: 'draft',
@@ -360,6 +404,153 @@ function teamNextOpponent(teamAbbr){
   return null;
 }
 
+async function loadByeWeeks(){
+  const season = new Date().getFullYear();
+  const proms = NFL_TEAMS.map(async abbr=>{
+    const slug = (abbr === 'WAS' ? 'wsh' : abbr).toLowerCase();
+    try{
+      const data = await fetchJSON('https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/'+slug+'/schedule?season='+season+'&seasontype=2');
+      const weeks = (data.events||[]).map(e => e.week && e.week.number).filter(Boolean);
+      for(let w=1; w<=18; w++){
+        if(!weeks.includes(w)){ STATE.byeWeeks[abbr] = w; break; }
+      }
+    }catch(e){ /* skip team, badge just won't show */ }
+  });
+  await Promise.all(proms);
+}
+
+function parseCsvLine(line){
+  const out = []; let cur = ''; let inQuotes = false;
+  for(let i=0; i<line.length; i++){
+    const ch = line[i];
+    if(inQuotes){
+      if(ch === '"'){
+        if(line[i+1] === '"'){ cur += '"'; i++; } else { inQuotes = false; }
+      } else cur += ch;
+    } else {
+      if(ch === '"') inQuotes = true;
+      else if(ch === ','){ out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+async function loadIdCrosswalk(){
+  try{
+    const res = await fetch('https://raw.githubusercontent.com/dynastyprocess/data/master/files/db_playerids.csv');
+    if(!res.ok) throw new Error('bad status');
+    const text = await res.text();
+    const lines = text.split('\n');
+    const header = parseCsvLine(lines[0]);
+    const espnIdx = header.indexOf('espn_id');
+    const sleeperIdx = header.indexOf('sleeper_id');
+    if(espnIdx === -1 || sleeperIdx === -1) return;
+    for(let i=1; i<lines.length; i++){
+      if(!lines[i].trim()) continue;
+      const cols = parseCsvLine(lines[i]);
+      const espnId = (cols[espnIdx]||'').trim();
+      const sleeperId = (cols[sleeperIdx]||'').trim();
+      if(espnId && sleeperId) STATE.espnToSleeper[espnId] = sleeperId;
+    }
+  }catch(e){ /* crosswalk unavailable — ESPN sync will just fail gracefully */ }
+}
+
+/* ---------- local persistence (per-league via label) ---------- */
+function storageKey(){
+  const label = el('leagueLabelInput').value.trim().replace(/\s+/g,'_');
+  return STORAGE_KEY + (label ? ':' + label : '');
+}
+
+function saveLocal(){
+  try{
+    localStorage.setItem(storageKey(), JSON.stringify({
+      drafted: Array.from(STATE.drafted),
+      roster: STATE.roster,
+      rosterMeta: STATE.rosterMeta,
+      history: STATE.history,
+      site: el('siteSelect').value,
+      draftId: el('draftIdInput').value,
+      mySlot: el('mySlotInput').value,
+      espnLeagueId: el('espnLeagueIdInput').value,
+      espnYear: el('espnYearInput').value,
+      espnTeamId: el('espnTeamIdInput').value,
+      leagueSize: el('leagueSizeInput').value,
+      strategy: el('strategySelect').value
+    }));
+    localStorage.setItem(STORAGE_KEY + ':__lastLabel', el('leagueLabelInput').value.trim());
+  }catch(e){ /* storage unavailable — fine, just won't persist */ }
+}
+
+function restoreLastLabel(){
+  try{
+    const lbl = localStorage.getItem(STORAGE_KEY + ':__lastLabel');
+    if(lbl) el('leagueLabelInput').value = lbl;
+  }catch(e){ /* fine — starts blank */ }
+}
+
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem(storageKey());
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(d.drafted) STATE.drafted = new Set(d.drafted);
+    if(d.roster && d.roster.length === ROSTER_SLOTS.length) STATE.roster = d.roster;
+    if(d.rosterMeta && d.rosterMeta.length === ROSTER_SLOTS.length) STATE.rosterMeta = d.rosterMeta;
+    if(d.history) STATE.history = d.history;
+    if(d.site) el('siteSelect').value = d.site;
+    if(d.draftId) el('draftIdInput').value = d.draftId;
+    if(d.mySlot) el('mySlotInput').value = d.mySlot;
+    if(d.espnLeagueId) el('espnLeagueIdInput').value = d.espnLeagueId;
+    if(d.espnYear) el('espnYearInput').value = d.espnYear;
+    if(d.espnTeamId) el('espnTeamIdInput').value = d.espnTeamId;
+    if(d.leagueSize) el('leagueSizeInput').value = d.leagueSize;
+    if(d.strategy) el('strategySelect').value = d.strategy;
+  }catch(e){ /* corrupt or unavailable storage — start fresh */ }
+}
+
+function switchLeagueProfile(){
+  STATE.drafted = new Set();
+  STATE.roster = new Array(ROSTER_SLOTS.length).fill(null);
+  STATE.rosterMeta = new Array(ROSTER_SLOTS.length).fill(null);
+  STATE.history = [];
+  loadLocal();
+  updateUndoBtn();
+  updateClock();
+  renderRoster();
+  renderPlayerList();
+  saveLocal();
+}
+
+/* ---------- draft strategy ---------- */
+function strategyAdvice(){
+  const strat = el('strategySelect').value;
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const round = Math.ceil((STATE.drafted.size + 1) / leagueSize);
+  const rbCount = STATE.roster.reduce((n,pid)=> n + (pid && STATE.players[pid] && STATE.players[pid].position === 'RB' ? 1 : 0), 0);
+  const avoidPositions = new Set();
+  let text = '';
+  if(strat === 'hero-rb'){
+    if(rbCount === 0){ text = 'Hero RB: grab one elite RB now if a top-tier back is on the board.'; }
+    else if(round < 6){ avoidPositions.add('RB'); text = 'Hero RB: bell-cow locked in — pivot to WR/TE until round 6+.'; }
+    else{ text = 'Hero RB: core is set — backfill RB depth from here on.'; }
+  } else if(strat === 'zero-rb'){
+    if(round <= 4){ avoidPositions.add('RB'); text = 'Zero RB: avoid RB, load up on elite WR/TE early.'; }
+    else{ text = 'Zero RB: start mass-drafting RB on volume and opportunity now.'; }
+  } else if(strat === 'robust-rb'){
+    if(rbCount < 3 && round <= 4){ text = 'Robust RB: keep hammering RB to build a scarcity edge.'; }
+    else{ text = 'Robust RB core is set — fill out WR/TE/flex value now.'; }
+  } else {
+    text = 'Best Player Available: no positional bias — take the highest-ranked player left.';
+  }
+  return { text, avoidPositions };
+}
+
+function renderStrategyNote(){
+  el('strategyNote').textContent = strategyAdvice().text;
+}
+
 /* ---------- rendering: draft board ---------- */
 function buildPosFilters(){
   const wrap = el('posFilters');
@@ -367,6 +558,44 @@ function buildPosFilters(){
   wrap.innerHTML = opts.map(p => '<button data-pos="'+p+'" class="'+(p===STATE.posFilter?'on':'')+'">'+p+'</button>').join('');
   wrap.querySelectorAll('button').forEach(b=>{
     b.onclick = ()=>{ STATE.posFilter = b.dataset.pos; buildPosFilters(); renderPlayerList(); };
+  });
+}
+
+function openPositions(){
+  const need = new Set();
+  ROSTER_SLOTS.forEach((slot,i)=>{
+    if(slot === 'BN' || STATE.roster[i]) return;
+    if(slot === 'FLEX') FLEX_ELIGIBLE.forEach(p => need.add(p));
+    else need.add(slot);
+  });
+  return need;
+}
+
+function rankOf(p){ return (p && p.search_rank != null) ? p.search_rank : Infinity; }
+
+function bestAvailable(){
+  const pool = STATE.playerArr.filter(p => !STATE.drafted.has(p.id) && rankOf(p) !== Infinity);
+  const ranked = pool.slice().sort((a,b)=> rankOf(a) - rankOf(b));
+  const cards = [];
+  if(ranked[0]) cards.push({label:'OVR', p:ranked[0]});
+  POSITIONS.forEach(pos=>{
+    const cand = ranked.find(p => p.position === pos);
+    if(cand) cards.push({label:pos, p:cand});
+  });
+  return cards;
+}
+
+function renderBestAvailable(){
+  const cards = bestAvailable();
+  const { avoidPositions } = strategyAdvice();
+  el('bestAvail').innerHTML = cards.map(c=>{
+    const avoid = avoidPositions.has(c.p.position);
+    return '<div class="bcard'+(avoid?' avoid':'')+'"><div class="pos">'+c.label+'</div><div class="nm">'+fullName(c.p).trim()+'</div>'
+    + '<div class="rk">Rank #'+c.p.search_rank+' &middot; '+(c.p.team||'FA')+(avoid?' &middot; hold off':'')+'</div>'
+    + '<button class="btn primary mini" data-add="'+c.p.id+'">Draft</button></div>';
+  }).join('');
+  el('bestAvail').querySelectorAll('[data-add]').forEach(b=>{
+    b.onclick = ()=> addToRoster(b.dataset.add);
   });
 }
 
@@ -379,37 +608,64 @@ function renderPlayerList(){
 
   list = list.slice().sort((a,b)=>{
     if(sortMode === 'name') return fullName(a).localeCompare(fullName(b));
-    if(sortMode === 'pos') return a.position.localeCompare(b.position) || (STATE.trendingAdd[b.id]||0)-(STATE.trendingAdd[a.id]||0);
-    return (STATE.trendingAdd[b.id]||0) - (STATE.trendingAdd[a.id]||0) || fullName(a).localeCompare(fullName(b));
+    if(sortMode === 'pos') return a.position.localeCompare(b.position) || rankOf(a)-rankOf(b);
+    if(sortMode === 'buzz') return (STATE.trendingAdd[b.id]||0) - (STATE.trendingAdd[a.id]||0) || rankOf(a)-rankOf(b);
+    return rankOf(a) - rankOf(b) || fullName(a).localeCompare(fullName(b));
   });
 
   const shown = list.slice(0, 100);
   el('listFooter').textContent = 'Showing ' + shown.length + ' of ' + list.length + ' available players.' + (list.length>100 ? ' Refine your search to see more.' : '');
 
-  el('playerList').innerHTML = shown.map(p=>{
+  const needSet = openPositions();
+  let prevRank = null;
+  const rows = shown.map(p=>{
     const buzz = STATE.trendingAdd[p.id];
-    return '<li>'
+    const bye = STATE.byeWeeks[p.team];
+    const rank = rankOf(p);
+    let divider = '';
+    if(sortMode === 'rank' && prevRank != null && rank !== Infinity && (rank - prevRank) >= 8){
+      divider = '<div class="tier-divider">— tier break —</div>';
+    }
+    if(rank !== Infinity) prevRank = rank;
+    const li = '<li>'
       + '<div class="p-pos">'+p.position+'</div>'
       + '<div class="p-info"><div class="p-name">'+fullName(p).trim()+'</div>'
-      + '<div class="p-meta">'+(p.team||'FA')+(p.years_exp!=null ? ' &middot; Yr '+ (p.years_exp+1) : '')+'</div></div>'
+      + '<div class="p-meta">'+(p.team||'FA')+(p.search_rank!=null?' &middot; Rank #'+p.search_rank:'')+'</div></div>'
+      + (needSet.has(p.position) ? '<span class="badge need">NEED</span>' : '')
+      + (bye ? '<span class="badge bye">BYE '+bye+'</span>' : '')
       + (buzz ? '<span class="badge hot">+'+buzz+'</span>' : '')
       + injuryBadge(p)
       + '<button class="btn primary mini" data-add="'+p.id+'">Draft to me</button>'
       + '<button class="btn mini" data-taken="'+p.id+'">Mark taken</button>'
       + '</li>';
-  }).join('');
+    return divider + li;
+  });
+  el('playerList').innerHTML = rows.join('');
+
+  renderBestAvailable();
 
   el('playerList').querySelectorAll('[data-add]').forEach(b=>{
     b.onclick = ()=> addToRoster(b.dataset.add);
   });
   el('playerList').querySelectorAll('[data-taken]').forEach(b=>{
-    b.onclick = ()=>{ STATE.drafted.add(b.dataset.taken); renderPlayerList(); };
+    b.onclick = ()=> markTaken(b.dataset.taken);
   });
 }
 
-function addToRoster(id){
+function markTaken(id){
+  if(STATE.drafted.has(id)) return;
+  STATE.drafted.add(id);
+  STATE.history.push({type:'taken', id});
+  updateUndoBtn();
+  updateClock();
+  renderPlayerList();
+  saveLocal();
+}
+
+function addToRoster(id, explicitRound){
   const p = STATE.players[id];
   if(!p) return;
+  if(STATE.roster.includes(id)) return;
   let slotIdx = -1;
   for(let i=0;i<ROSTER_SLOTS.length;i++){
     if(STATE.roster[i]) continue;
@@ -419,10 +675,109 @@ function addToRoster(id){
     }
   }
   if(slotIdx === -1){ alert('No open roster slot fits ' + p.position + '.'); return; }
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const pickNo = STATE.drafted.size + 1;
+  const round = explicitRound || Math.ceil(pickNo / leagueSize);
+  const keepCost = Math.max(1, round - 2);
   STATE.roster[slotIdx] = id;
+  STATE.rosterMeta[slotIdx] = { round, keepCost };
   STATE.drafted.add(id);
+  STATE.history.push({type:'roster', id, slotIdx});
+  updateUndoBtn();
+  updateClock();
   renderRoster();
   renderPlayerList();
+  saveLocal();
+}
+
+function undoLast(){
+  const last = STATE.history.pop();
+  if(!last) return;
+  if(last.type === 'roster'){
+    STATE.roster[last.slotIdx] = null;
+    STATE.rosterMeta[last.slotIdx] = null;
+    STATE.drafted.delete(last.id);
+  } else if(last.type === 'taken'){
+    STATE.drafted.delete(last.id);
+  }
+  updateUndoBtn();
+  updateClock();
+  renderRoster();
+  renderPlayerList();
+  saveLocal();
+}
+
+function updateUndoBtn(){
+  el('undoBtn').disabled = STATE.history.length === 0;
+}
+
+function updateClock(){
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const pickNo = STATE.drafted.size + 1;
+  const round = Math.ceil(pickNo / leagueSize);
+  el('clockStatus').textContent = 'On the clock: Round ' + round + ', Pick ' + pickNo + ' — a player drafted now would cost Round ' + Math.max(1, round-2) + ' to keep next year.';
+  renderStrategyNote();
+}
+
+function resetDraft(){
+  if(!confirm('Clear your roster and all marked picks? This cannot be undone.')) return;
+  STATE.drafted = new Set();
+  STATE.roster = new Array(ROSTER_SLOTS.length).fill(null);
+  STATE.rosterMeta = new Array(ROSTER_SLOTS.length).fill(null);
+  STATE.history = [];
+  updateUndoBtn();
+  updateClock();
+  renderRoster();
+  renderPlayerList();
+  saveLocal();
+}
+
+function buildRosterText(){
+  const lines = ['MY ROSTER — CHAINS', ''];
+  ROSTER_SLOTS.forEach((slot,i)=>{
+    const pid = STATE.roster[i];
+    const p = pid ? STATE.players[pid] : null;
+    const meta = STATE.rosterMeta[i];
+    let line = slot + ': ' + (p ? fullName(p).trim() + ' (' + (p.team||'FA') + ')' : '—');
+    if(p && meta) line += ' — drafted Rd ' + meta.round + ', keeper cost Rd ' + meta.keepCost;
+    lines.push(line);
+  });
+  return lines.join('\n');
+}
+
+function copyRoster(){
+  const text = buildRosterText();
+  const btn = el('copyRosterBtn');
+  const done = ()=>{ btn.textContent = 'Copied!'; setTimeout(()=> btn.textContent = 'Copy roster', 1500); };
+  const fallback = ()=>{
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta);
+    done();
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+function computeByeClashes(){
+  const counts = {};
+  ROSTER_SLOTS.forEach((slot,i)=>{
+    if(slot === 'BN') return;
+    const pid = STATE.roster[i];
+    if(!pid) return;
+    const p = STATE.players[pid];
+    if(!p) return;
+    const bye = STATE.byeWeeks[p.team];
+    if(!bye) return;
+    counts[bye] = counts[bye] || [];
+    counts[bye].push(fullName(p).trim());
+  });
+  return Object.entries(counts).filter(([w, names]) => names.length > 1);
 }
 
 function renderRoster(){
@@ -432,8 +787,17 @@ function renderRoster(){
   el('rosterGrid').innerHTML = ROSTER_SLOTS.map((slot,i)=>{
     const pid = STATE.roster[i];
     const p = pid ? STATE.players[pid] : null;
-    return '<div class="slot '+(p?'':'empty')+'"><div class="lbl">'+slot+'</div><div class="name">'+(p? fullName(p).trim() : 'empty')+'</div></div>';
+    const meta = STATE.rosterMeta[i];
+    const bye = p ? STATE.byeWeeks[p.team] : null;
+    let metaLine = '';
+    if(p && meta) metaLine = '<div class="meta">Rd '+meta.round+(bye?' &middot; Bye '+bye:'')+' &middot; keep Rd '+meta.keepCost+'</div>';
+    return '<div class="slot '+(p?'':'empty')+'"><div class="lbl">'+slot+'</div><div class="name">'+(p? fullName(p).trim() : 'empty')+'</div>'+metaLine+'</div>';
   }).join('');
+
+  const clashes = computeByeClashes();
+  el('byeWarning').innerHTML = clashes.length
+    ? clashes.map(([w,names]) => '&#9888; Week '+w+' bye clash among starters: '+names.join(', ')).join('<br>')
+    : '';
 }
 
 /* ---------- rendering: start/sit ---------- */
@@ -525,23 +889,36 @@ function wireEvents(){
 
   el('siteSelect').addEventListener('change', onSiteChange);
   el('connectBtn').addEventListener('click', onConnectClick);
+  el('undoBtn').addEventListener('click', undoLast);
+  el('copyRosterBtn').addEventListener('click', copyRoster);
+  el('resetBtn').addEventListener('click', resetDraft);
+  el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); saveLocal(); });
+  el('leagueLabelInput').addEventListener('change', switchLeagueProfile);
+  el('strategySelect').addEventListener('change', ()=>{ renderStrategyNote(); renderPlayerList(); saveLocal(); });
 }
 
 function onSiteChange(){
   const site = el('siteSelect').value;
   STATE.sync.site = site;
-  const showSleeperFields = site === 'sleeper';
-  el('draftIdInput').style.display = showSleeperFields ? 'inline-block' : 'none';
-  el('mySlotInput').style.display = showSleeperFields ? 'inline-block' : 'none';
-  el('connectBtn').style.display = showSleeperFields ? 'inline-block' : 'none';
+  const sleeperFields = site === 'sleeper';
+  const espnFields = site === 'espn';
+  el('draftIdInput').style.display = sleeperFields ? 'inline-block' : 'none';
+  el('mySlotInput').style.display = sleeperFields ? 'inline-block' : 'none';
+  el('espnLeagueIdInput').style.display = espnFields ? 'inline-block' : 'none';
+  el('espnYearInput').style.display = espnFields ? 'inline-block' : 'none';
+  el('espnTeamIdInput').style.display = espnFields ? 'inline-block' : 'none';
+  el('connectBtn').style.display = (sleeperFields || espnFields) ? 'inline-block' : 'none';
+  if(espnFields && !el('espnYearInput').value) el('espnYearInput').value = new Date().getFullYear();
   if(site === 'manual'){
     el('syncNote').textContent = 'Manual mode — use "Mark taken" on any player as picks happen in your draft.';
   } else if(site === 'sleeper'){
     el('syncNote').textContent = 'Paste the draft ID from your Sleeper draft URL (the string after /draft/nfl/). Set your draft slot number to also auto-fill your own roster as you pick.';
+  } else if(site === 'espn'){
+    el('syncNote').textContent = 'Experimental: ESPN\'s fantasy API is undocumented and may block browser requests — if it connects, picks are matched to this tool\'s player pool via a public ID crosswalk (DynastyProcess.com), so a few players may not map. If it fails, this falls back to manual "Mark taken" automatically. League must be public.';
   } else if(site === 'mfl'){
     el('syncNote').textContent = 'MyFantasyLeague blocks browser-based live sync by policy, so this can\'t auto-update — use "Mark taken" on players as picks happen in your MFL draft room instead.';
   } else {
-    const label = {espn:'ESPN', yahoo:'Yahoo', nfl:'NFL.com'}[site];
+    const label = {yahoo:'Yahoo', nfl:'NFL.com'}[site];
     el('syncNote').textContent = label + ' does not expose a public live-draft feed, so live sync isn\'t available for it here — use "Mark taken" on players as they come off the board in the ' + label + ' room.';
   }
   disconnectSync();
@@ -549,14 +926,31 @@ function onSiteChange(){
 
 async function onConnectClick(){
   if(STATE.sync.connected){ disconnectSync(); return; }
-  const draftId = el('draftIdInput').value.trim();
-  if(!draftId){ alert('Enter a Sleeper draft ID first.'); return; }
+  const site = STATE.sync.site;
   STATE.sync.processedPicks = new Set();
-  STATE.sync.connected = true;
-  el('connectBtn').textContent = 'Disconnect';
-  el('connectBtn').classList.add('connected');
-  await pollSleeperDraft(draftId);
-  STATE.sync.timer = setInterval(()=> pollSleeperDraft(draftId), 10000);
+
+  if(site === 'sleeper'){
+    const draftId = el('draftIdInput').value.trim();
+    if(!draftId){ alert('Enter a Sleeper draft ID first.'); return; }
+    STATE.sync.connected = true;
+    el('connectBtn').textContent = 'Disconnect';
+    el('connectBtn').classList.add('connected');
+    await pollSleeperDraft(draftId);
+    STATE.sync.timer = setInterval(()=> pollSleeperDraft(draftId), 10000);
+  } else if(site === 'espn'){
+    const leagueId = el('espnLeagueIdInput').value.trim();
+    const year = el('espnYearInput').value.trim() || new Date().getFullYear();
+    if(!leagueId){ alert('Enter your ESPN league ID first.'); return; }
+    if(Object.keys(STATE.espnToSleeper).length === 0){
+      el('syncStatus').textContent = 'Player ID crosswalk didn\'t load — try reloading the page before connecting to ESPN.';
+      return;
+    }
+    STATE.sync.connected = true;
+    el('connectBtn').textContent = 'Disconnect';
+    el('connectBtn').classList.add('connected');
+    const ok = await pollEspnDraft(leagueId, year);
+    if(ok) STATE.sync.timer = setInterval(()=> pollEspnDraft(leagueId, year), 10000);
+  }
 }
 
 function disconnectSync(){
@@ -580,39 +974,77 @@ async function pollSleeperDraft(draftId){
       if(!STATE.sync.processedPicks.has(pick.pick_no)){
         STATE.sync.processedPicks.add(pick.pick_no);
         if(mySlot && pick.draft_slot === mySlot && STATE.players[pick.player_id] && !STATE.roster.includes(pick.player_id)){
-          addToRoster(pick.player_id);
+          addToRoster(pick.player_id, pick.round);
         }
       }
     });
     el('syncStatus').textContent = 'Connected — ' + picks.length + ' picks made, synced ' + new Date().toLocaleTimeString();
     renderPlayerList();
     renderRoster();
+    saveLocal();
   }catch(e){
     el('syncStatus').textContent = 'Could not reach that draft ID — check it and reconnect.';
     disconnectSync();
   }
 }
 
+async function pollEspnDraft(leagueId, year){
+  try{
+    const data = await fetchJSON('https://fantasy.espn.com/apis/v3/games/ffl/seasons/'+year+'/segments/0/leagues/'+leagueId+'?view=mDraftDetail');
+    const picks = (data.draftDetail && data.draftDetail.picks) || [];
+    const myTeamId = parseInt(el('espnTeamIdInput').value, 10);
+    let matched = 0;
+    picks.forEach(pick=>{
+      const sleeperId = STATE.espnToSleeper[String(pick.playerId)];
+      if(!sleeperId || !STATE.players[sleeperId]) return;
+      matched++;
+      STATE.drafted.add(sleeperId);
+      const pickKey = 'espn-' + (pick.overallPickNumber != null ? pick.overallPickNumber : pick.roundId+'-'+pick.roundPickNumber);
+      if(!STATE.sync.processedPicks.has(pickKey)){
+        STATE.sync.processedPicks.add(pickKey);
+        if(myTeamId && pick.teamId === myTeamId && !STATE.roster.includes(sleeperId)){
+          addToRoster(sleeperId, pick.roundId);
+        }
+      }
+    });
+    el('syncStatus').textContent = 'Connected — ' + matched + ' of ' + picks.length + ' ESPN picks matched, synced ' + new Date().toLocaleTimeString();
+    renderPlayerList();
+    renderRoster();
+    saveLocal();
+    return true;
+  }catch(e){
+    el('syncStatus').textContent = 'ESPN blocked this request from the browser (undocumented API, no guaranteed CORS access) — falling back to manual "Mark taken" for this league.';
+    disconnectSync();
+    return false;
+  }
+}
+
 async function init(){
   wireEvents();
   buildPosFilters();
+  restoreLastLabel();
+  loadLocal();
+  onSiteChange();
+  updateUndoBtn();
+  updateClock();
   renderRoster();
   try{
     await loadPlayers();
     renderPlayerList();
+    renderRoster();
   }catch(e){
     el('poolStatus').textContent = 'Could not load the player pool right now. Try reloading.';
   }
-  await loadTrending();
-  await loadScoreboard();
+  await Promise.all([loadTrending(), loadScoreboard(), loadByeWeeks(), loadIdCrosswalk()]);
+  renderPlayerList();
+  renderRoster();
 
-  const now = new Date();
   const inSeason = STATE.scoreboard && STATE.scoreboard.events && STATE.scoreboard.events.length > 0;
   el('offseasonBanner').textContent = inSeason
     ? 'Live scoreboard connected — next-opponent data below reflects the current NFL week.'
     : 'No live games on the board right now (offseason or bye week for the league) — injury designations and waiver buzz are still live; matchup data will populate once games are scheduled.';
 
-  el('footerNote').innerHTML = 'Player pool, injury designations, and 24h waiver-wire trends: Sleeper public API. Live scores and next-opponent lookups: ESPN public scoreboard API. Both refresh on page load — reload this page for the latest data. This tool surfaces real signals (injury status, add/drop momentum, matchups) rather than a proprietary ranking algorithm, so pair it with your own judgment on depth charts and offensive schemes.';
+  el('footerNote').innerHTML = 'Player pool, injury designations, overall rank, and 24h waiver-wire trends: Sleeper public API. Live scores, next-opponent lookups, and bye weeks: ESPN public APIs. Cross-platform player ID matching for ESPN sync: DynastyProcess.com\'s open player ID database. Rank is Sleeper\'s own player ranking (their proxy for consensus value, not a proprietary projection) — it drives "Best Available," tier breaks, and default sort; a small number of deep bench players have no rank and sort last. NEED badges reflect your open starting slots. Strategy mode (Hero/Zero/Robust RB or BPA) gives live guidance based on your actual roster and round, and softly flags positions to hold off on in Best Available — it\'s a nudge, not a rule. ESPN live sync is experimental and may not connect (undocumented API); it falls back to manual tracking automatically if so. All refresh on page load. Progress saves automatically per league label in this browser (once hosted, not in a temporary preview) — use the league label field to keep multiple drafts separate, and "Reset draft" to start one over.';
 }
 
 init();
