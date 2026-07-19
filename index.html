@@ -122,6 +122,14 @@
     background:var(--panel-2); border:1px solid var(--line-strong); border-radius:2px; padding:2px 0; color:var(--turf-bright);
     flex:0 0 auto;
   }
+  .p-avatar{
+    width:34px; height:34px; border-radius:50%; object-fit:cover; flex:0 0 auto;
+    background:var(--panel-2); border:1px solid var(--line-strong);
+  }
+  .p-avatar-lg{
+    width:72px; height:72px; border-radius:50%; object-fit:cover;
+    background:var(--panel-2); border:1px solid var(--line-strong); grid-column:1/2; grid-row:1/3;
+  }
   .p-info{flex:1; min-width:0;}
   .p-name{font-weight:600; font-size:14px; color:var(--chalk); cursor:pointer;}
   .p-name:hover{color:var(--turf-bright);}
@@ -631,6 +639,13 @@ function researchUrl(name){
   return 'https://www.google.com/search?q=' + encodeURIComponent(q);
 }
 
+// Sleeper hosts public headshot images at this CDN path keyed by their player id.
+// Not every player has one on file (rookies pre-season, D/ST, etc.) — the onerror
+// handler swaps in a blank placeholder rather than showing a broken image icon.
+function headshotUrl(p){
+  return 'https://sleepercdn.com/content/nfl/players/' + p.id + '.jpg';
+}
+
 /* ---------- rendering: draft board ---------- */
 function buildPosFilters(){
   const wrap = el('posFilters');
@@ -711,6 +726,7 @@ function renderPlayerList(){
     const expanded = STATE.expandedPlayer === p.id;
     const li = '<li>'
       + '<div class="p-pos">'+p.position+'</div>'
+      + '<img class="p-avatar" src="'+headshotUrl(p)+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="p-info"><div class="p-name" data-expand="'+p.id+'">'+fullName(p).trim()+'</div>'
       + '<div class="p-meta">'+(p.team||'FA')+(p.search_rank!=null?' &middot; Rank #'+p.search_rank:'')+'</div></div>'
       + (needSet.has(p.position) ? '<span class="badge need">NEED</span>' : '')
@@ -747,6 +763,7 @@ function playerCardHtml(p, buzz, bye){
     ? 'Live sync connected (' + STATE.sync.site + ') — last updated ' + (STATE.sync.lastSyncedAt || 'just now')
     : 'Not connected to a live draft — using Sleeper pool data only';
   return '<div class="p-card">'
+    + '<img class="p-avatar-lg" src="'+headshotUrl(p)+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
     + '<div class="stat"><div class="lbl">Team</div><div class="val">'+(p.team||'Free agent')+'</div></div>'
     + '<div class="stat"><div class="lbl">Sleeper rank</div><div class="val">'+(p.search_rank!=null?'#'+p.search_rank:'—')+'</div></div>'
     + '<div class="stat"><div class="lbl">Bye week</div><div class="val">'+(bye||'—')+'</div></div>'
