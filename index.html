@@ -65,11 +65,11 @@
   @keyframes scroll{ from{transform:translateX(0);} to{transform:translateX(-100%);} }
 
   /* tabs */
-  nav.tabs{display:flex; gap:2px; margin-top:22px; border-bottom:1px solid var(--line-strong);}
+  nav.tabs{display:flex; gap:2px; margin-top:22px; border-bottom:1px solid var(--line-strong); overflow-x:auto; -webkit-overflow-scrolling:touch;}
   nav.tabs button{
     font-family:'Teko',sans-serif; font-size:20px; letter-spacing:1px; font-weight:600;
     background:none; border:none; color:var(--chalk-dim); padding:10px 18px 12px; cursor:pointer;
-    border-bottom:2px solid transparent; transition:color .15s, border-color .15s;
+    border-bottom:2px solid transparent; transition:color .15s, border-color .15s; flex:0 0 auto; white-space:nowrap;
   }
   nav.tabs button.active{color:var(--chalk); border-bottom-color:var(--turf-bright);}
   nav.tabs button:hover{color:var(--chalk);}
@@ -114,7 +114,7 @@
 
   ul.plist{list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:6px;}
   ul.plist li{
-    display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line);
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--panel); border:1px solid var(--line);
     border-radius:3px; padding:9px 12px;
   }
   .p-pos{
@@ -130,7 +130,7 @@
     width:72px; height:72px; border-radius:50%; object-fit:cover;
     background:var(--panel-2); border:1px solid var(--line-strong); grid-column:1/2; grid-row:1/3;
   }
-  .p-info{flex:1; min-width:0;}
+  .p-info{flex:1 1 130px; min-width:0;}
   .p-name{font-weight:600; font-size:14px; color:var(--chalk); cursor:pointer;}
   .p-name:hover{color:var(--turf-bright);}
   .p-meta{font-size:11.5px; color:var(--chalk-dim); margin-top:1px;}
@@ -141,6 +141,26 @@
   .p-card .stat .lbl{color:var(--chalk-dim); font-size:10px; letter-spacing:.5px; text-transform:uppercase;}
   .p-card .stat .val{color:var(--chalk); font-weight:600; margin-top:1px;}
   .p-card .research-full{grid-column:1/-1; text-align:center; margin-top:2px;}
+  .scarcity-strip{display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;}
+  .scarcity-chip{
+    flex:1 1 70px; text-align:center; padding:6px 4px; border-radius:3px; border:1px solid var(--line-strong);
+    background:var(--panel-2);
+  }
+  .scarcity-chip .lbl{font-family:'Teko',sans-serif; font-size:14px; letter-spacing:.5px; color:var(--chalk-dim);}
+  .scarcity-chip .val{font-size:13px; font-weight:700; margin-top:1px;}
+  .scarcity-chip.ok .val{color:var(--turf-bright);}
+  .scarcity-chip.tight .val{color:var(--amber);}
+  .scarcity-chip.thin .val{color:var(--red);}
+  .history-table{width:100%; border-collapse:collapse; margin-top:10px; font-size:12px;}
+  .history-table th{text-align:left; color:var(--chalk-dim); font-weight:600; font-size:10.5px; letter-spacing:.5px; text-transform:uppercase; padding:4px 8px 6px;}
+  .history-table td{padding:5px 8px; border-top:1px solid var(--line); color:var(--chalk);}
+  .history-table td.pos{font-family:'Teko',sans-serif; font-weight:700; color:var(--turf-bright);}
+  .trade-item{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-top:1px solid var(--line); font-size:12.5px;}
+  .trade-item:first-of-type{border-top:none;}
+  .trade-item .tname{color:var(--chalk); font-weight:600;}
+  .trade-item .tmeta{color:var(--chalk-dim); font-size:11px; margin-top:1px;}
+  .trade-item .rm{background:none; border:none; color:var(--red); cursor:pointer; font-size:16px; line-height:1; padding:2px 4px; flex:0 0 auto;}
+  .trade-total{margin-top:10px; padding-top:10px; border-top:1px solid var(--line-strong); font-size:12.5px; display:flex; justify-content:space-between; font-weight:700; color:var(--chalk);}
 
   .badge{font-size:10px; padding:2px 6px; border-radius:8px; font-weight:600; letter-spacing:.3px; flex:0 0 auto;}
   .badge.hot{background:rgba(232,163,61,0.15); color:var(--amber); border:1px solid rgba(232,163,61,0.4);}
@@ -202,6 +222,12 @@
   @media (max-width:640px){
     .vs-grid{grid-template-columns:1fr; }
     .vs-mid{padding-top:0; text-align:center;}
+    ul.plist li{padding:10px;}
+    ul.plist li .btn{flex:1 1 auto; padding:8px 10px; font-size:12px;}
+    nav.tabs button{font-size:17px; padding:9px 13px 11px;}
+    .roster-tools{gap:8px;}
+    .roster-tools .btn{padding:7px 10px;}
+    .scarcity-chip{flex-basis:30%;}
   }
 </style>
 </head>
@@ -221,6 +247,7 @@
 
   <nav class="tabs">
     <button class="active" data-tab="draft">DRAFT BOARD</button>
+    <button data-tab="trade">TRADE</button>
     <button data-tab="startsit">START / SIT</button>
   </nav>
 
@@ -264,6 +291,16 @@
       <div class="status-line" id="strategyNote"></div>
     </div>
 
+    <div class="chains">
+      <div class="head"><h3>LEAGUE HISTORY</h3><span id="historyStatus">Not loaded</span></div>
+      <div class="row sync-row" style="margin-top:8px;">
+        <input type="text" id="historyLeagueIdInput" placeholder="Sleeper league ID (any season of this league)">
+        <button class="btn primary" id="historyLoadBtn">Load history</button>
+      </div>
+      <div class="status-line" id="historyNote">Pulls past seasons of this Sleeper league (via its season-to-season link) and shows when each position typically comes off the board, based on actual past drafts — not projections.</div>
+      <div id="historyResults" style="overflow-x:auto; -webkit-overflow-scrolling:touch;"></div>
+    </div>
+
     <div class="row" style="margin-top:16px;">
       <input type="text" id="searchInput" placeholder="Search player or team...">
       <select id="sortSelect">
@@ -274,6 +311,7 @@
       </select>
     </div>
     <div class="status-line" id="clockStatus"></div>
+    <div class="scarcity-strip" id="scarcityStrip"></div>
     <div class="best-avail" id="bestAvail"></div>
     <div class="pos-filters" id="posFilters"></div>
     <div class="status-line" id="poolStatus">Loading player pool…</div>
@@ -296,6 +334,26 @@
   </section>
 
   <!-- START/SIT PANEL -->
+  <section class="panel" id="panel-trade">
+    <div class="row">
+      <div class="ac-wrap">
+        <input type="text" id="tradeSearchGive" placeholder="Add a player you're giving up..." autocomplete="off">
+        <div class="ac-list" id="tradeListGive" style="display:none;"></div>
+      </div>
+      <div class="ac-wrap">
+        <input type="text" id="tradeSearchGet" placeholder="Add a player you're receiving..." autocomplete="off">
+        <div class="ac-list" id="tradeListGet" style="display:none;"></div>
+      </div>
+    </div>
+    <div class="vs-grid">
+      <div class="compare-card" id="tradeCardGive"><h4>You give</h4><div class="field"><span class="k">No players added</span></div></div>
+      <div class="vs-mid">VS</div>
+      <div class="compare-card" id="tradeCardGet"><h4>You get</h4><div class="field"><span class="k">No players added</span></div></div>
+    </div>
+    <div class="verdict" id="tradeVerdict">Add one or more players to each side to evaluate the trade — works for 1-for-1s or multi-player deals.</div>
+    <button class="btn mini" id="tradeResetBtn" style="margin-top:10px;">Clear trade</button>
+  </section>
+
   <section class="panel" id="panel-startsit">
     <div class="row">
       <div class="ac-wrap">
@@ -341,6 +399,7 @@ const STATE = {
   activeTab: 'draft',
   currentLabel: '',
   ssSelected: { A: null, B: null },
+  tradeSelected: { give: [], get: [] }, // arrays of player ids on each side of a proposed trade
   expandedPlayer: null, // id of the player card currently expanded in the draft board list
   sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, lastSyncedAt: null }
 };
@@ -634,6 +693,43 @@ function renderStrategyNote(){
   el('strategyNote').textContent = strategyAdvice().text;
 }
 
+// "Startable" demand per position = how many roster slots the whole league needs
+// to fill at that position (dedicated slots x league size, plus a proportional share
+// of FLEX spread across RB/WR/TE). We then check how many of the top-ranked players
+// at that position, up to that demand count, are still undrafted — that's the number
+// of starter-quality players left before the position drops into backup-tier value.
+function positionScarcity(){
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const dedicated = {};
+  let flexSlots = 0;
+  ROSTER_SLOTS.forEach(s=>{
+    if(s === 'BN') return;
+    if(s === 'FLEX'){ flexSlots++; return; }
+    dedicated[s] = (dedicated[s]||0) + 1;
+  });
+  const result = {};
+  POSITIONS.forEach(pos=>{
+    let demand = (dedicated[pos]||0) * leagueSize;
+    if(FLEX_ELIGIBLE.includes(pos)) demand += Math.round(flexSlots * leagueSize / FLEX_ELIGIBLE.length);
+    const atPos = STATE.playerArr.filter(p=>p.position===pos).slice().sort((a,b)=>rankOf(a)-rankOf(b));
+    const topDemand = atPos.slice(0, demand);
+    const remaining = topDemand.filter(p=>!STATE.drafted.has(p.id)).length;
+    result[pos] = { remaining, demand };
+  });
+  return result;
+}
+
+function renderScarcityStrip(){
+  const scarcity = positionScarcity();
+  const html = POSITIONS.map(pos=>{
+    const { remaining, demand } = scarcity[pos];
+    const pct = demand ? remaining / demand : 1;
+    const tier = pct <= 0.25 ? 'thin' : (pct <= 0.5 ? 'tight' : 'ok');
+    return '<div class="scarcity-chip '+tier+'"><div class="lbl">'+pos+'</div><div class="val">'+remaining+'/'+demand+'</div></div>';
+  }).join('');
+  el('scarcityStrip').innerHTML = html;
+}
+
 function researchUrl(name){
   const q = '"' + name + '" fantasy football (site:fantasypros.com OR site:rotoballer.com OR site:walterfootball.com OR site:draftsharks.com)';
   return 'https://www.google.com/search?q=' + encodeURIComponent(q);
@@ -742,6 +838,7 @@ function renderPlayerList(){
   el('playerList').innerHTML = rows.join('');
 
   renderBestAvailable();
+  renderScarcityStrip();
 
   el('playerList').querySelectorAll('[data-add]').forEach(b=>{
     b.onclick = ()=> addToRoster(b.dataset.add);
@@ -995,6 +1092,106 @@ function renderVerdict(){
   out.innerHTML = 'No injury red flags on either side and buzz is similar — this one comes down to matchup and recent target/touch share. Check each team\'s next opponent above once the season schedule is live.';
 }
 
+/* ---------- rendering: trade evaluator ---------- */
+const TRADE_BAD_STATUS = ['Out','IR','Doubtful'];
+const RANK_SENTINEL = 250; // stand-in "value" for unranked players so sums stay finite
+
+function wireTradeAutocomplete(inputId, listId, side){
+  const input = el(inputId), list = el(listId);
+  input.addEventListener('input', ()=>{
+    const matches = searchMatches(input.value, 8);
+    if(!matches.length){ list.style.display = 'none'; list.innerHTML = ''; return; }
+    list.innerHTML = matches.map(p =>
+      '<div class="ac-item" data-pid="'+p.id+'">'+fullName(p).trim()+'<small>'+p.position+' &middot; '+(p.team||'FA')+'</small></div>'
+    ).join('');
+    list.style.display = 'block';
+    list.querySelectorAll('.ac-item').forEach(item=>{
+      item.onclick = ()=>{
+        if(!STATE.tradeSelected[side].includes(item.dataset.pid)) STATE.tradeSelected[side].push(item.dataset.pid);
+        input.value = '';
+        list.style.display = 'none';
+        renderTrade();
+      };
+    });
+  });
+  document.addEventListener('click', (e)=>{
+    if(e.target !== input) list.style.display = 'none';
+  });
+}
+
+function renderTradeSide(cardId, side, title){
+  const card = el(cardId);
+  const ids = STATE.tradeSelected[side];
+  if(!ids.length){
+    card.innerHTML = '<h4>'+title+'</h4><div class="field"><span class="k">No players added</span></div>';
+    return;
+  }
+  const rows = ids.map(id=>{
+    const p = STATE.players[id];
+    if(!p) return '';
+    const rank = rankOf(p);
+    return '<div class="trade-item"><div><div class="tname">'+fullName(p).trim()+'</div>'
+      + '<div class="tmeta">'+p.position+' &middot; '+(p.team||'FA')+(rank!==Infinity?' &middot; Rank #'+rank:'')+(TRADE_BAD_STATUS.includes(p.injury_status)?' &middot; '+p.injury_status:'')+'</div></div>'
+      + '<button class="rm" data-side="'+side+'" data-pid="'+id+'" title="Remove">&times;</button></div>';
+  }).join('');
+  const total = ids.reduce((sum,id)=>{ const p = STATE.players[id]; return sum + (p ? (rankOf(p)===Infinity?RANK_SENTINEL:rankOf(p)) : RANK_SENTINEL); }, 0);
+  card.innerHTML = '<h4>'+title+'</h4>' + rows + '<div class="trade-total"><span>Combined rank value</span><span>'+total+'</span></div>';
+  card.querySelectorAll('.rm').forEach(b=>{
+    b.onclick = ()=>{
+      STATE.tradeSelected[b.dataset.side] = STATE.tradeSelected[b.dataset.side].filter(id => id !== b.dataset.pid);
+      renderTrade();
+    };
+  });
+}
+
+// Lower combined rank = more value (Sleeper rank is best-first). Compares aggregate
+// value both sides give up, calls out any injury red flags, and notes if the side
+// you're receiving fills one of your open roster needs — same signals used elsewhere
+// in the tool (rank, injury status, NEED), just applied to a trade instead of a pick.
+function renderTradeVerdict(){
+  const out = el('tradeVerdict');
+  const give = STATE.tradeSelected.give.map(id => STATE.players[id]).filter(Boolean);
+  const get = STATE.tradeSelected.get.map(id => STATE.players[id]).filter(Boolean);
+  if(!give.length || !get.length){
+    out.innerHTML = 'Add one or more players to each side to evaluate the trade — works for 1-for-1s or multi-player deals.';
+    return;
+  }
+  const valueOf = list => list.reduce((sum,p)=> sum + (rankOf(p)===Infinity?RANK_SENTINEL:rankOf(p)), 0);
+  const giveTotal = valueOf(give), getTotal = valueOf(get);
+  const diff = giveTotal - getTotal; // positive = you're giving up more rank-value than you receive (good for you)
+
+  const flags = [];
+  const giveBad = give.filter(p => TRADE_BAD_STATUS.includes(p.injury_status));
+  const getBad = get.filter(p => TRADE_BAD_STATUS.includes(p.injury_status));
+  if(giveBad.length) flags.push('You\'re giving up '+giveBad.map(p=>fullName(p).trim()+' ('+p.injury_status+')').join(', ')+' — selling while the value is depressed by injury is worth a second look.');
+  if(getBad.length) flags.push('You\'d be receiving '+getBad.map(p=>fullName(p).trim()+' ('+p.injury_status+')').join(', ')+' — factor recovery timeline into the value, not just rank.');
+
+  const needSet = openPositions();
+  const fillsNeed = get.filter(p => needSet.has(p.position));
+  if(fillsNeed.length) flags.push('Fills an open roster need: '+fillsNeed.map(p=>p.position).join(', ')+'.');
+
+  let headline;
+  const pctSwing = giveTotal ? Math.abs(diff) / Math.max(giveTotal, getTotal) : 0;
+  if(pctSwing < 0.1){
+    headline = 'Roughly even on rank value ('+giveTotal+' vs '+getTotal+') — this one likely comes down to roster fit and need, not raw value.';
+  } else if(diff > 0){
+    headline = 'Favors you on rank value — you\'re receiving more (combined '+getTotal+') than you\'re giving up (combined '+giveTotal+').';
+  } else {
+    headline = 'Favors the other side on rank value — you\'re giving up more (combined '+giveTotal+') than you\'re receiving (combined '+getTotal+').';
+  }
+  if(give.length !== get.length){
+    headline += ' Uneven headcount ('+give.length+' for '+get.length+') — consider roster depth and bench value, not just the totals.';
+  }
+
+  out.innerHTML = headline + (flags.length ? '<br><br>' + flags.join('<br>') : '') + '<br><br>Rank is Sleeper\'s consensus-value proxy, not a trade calculator — treat this as a starting read, not the final word.';
+}
+
+function renderTrade(){
+  renderTradeSide('tradeCardGive', 'give', 'You give');
+  renderTradeSide('tradeCardGet', 'get', 'You get');
+  renderTradeVerdict();
+}
+
 /* ---------- wiring ---------- */
 function wireEvents(){
   document.querySelectorAll('nav.tabs button').forEach(b=>{
@@ -1009,13 +1206,20 @@ function wireEvents(){
   el('sortSelect').addEventListener('change', renderPlayerList);
   wireAutocomplete('ssSearchA', 'ssListA', 'A');
   wireAutocomplete('ssSearchB', 'ssListB', 'B');
+  wireTradeAutocomplete('tradeSearchGive', 'tradeListGive', 'give');
+  wireTradeAutocomplete('tradeSearchGet', 'tradeListGet', 'get');
+  el('tradeResetBtn').addEventListener('click', ()=>{
+    STATE.tradeSelected = { give: [], get: [] };
+    renderTrade();
+  });
 
   el('siteSelect').addEventListener('change', onSiteChange);
   el('connectBtn').addEventListener('click', onConnectClick);
   el('undoBtn').addEventListener('click', undoLast);
   el('copyRosterBtn').addEventListener('click', copyRoster);
   el('resetBtn').addEventListener('click', resetDraft);
-  el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); saveLocal(); });
+  el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); renderScarcityStrip(); saveLocal(); });
+  el('historyLoadBtn').addEventListener('click', loadLeagueHistory);
   el('leagueLabelSelect').addEventListener('change', onLeagueSelectChange);
   el('forgetLeagueBtn').addEventListener('click', forgetLeague);
   el('strategySelect').addEventListener('change', ()=>{ renderStrategyNote(); renderPlayerList(); saveLocal(); });
@@ -1062,6 +1266,91 @@ async function resolveSleeperDraftId(input){
     }
   }catch(e){ /* neither worked */ }
   return null;
+}
+
+// Sleeper links each season of a league to the prior one via previous_league_id,
+// so starting from any season's league ID we can walk backward to find past seasons
+// of the SAME league. Capped to avoid an unbounded chain on old/misconfigured leagues.
+async function resolveLeagueSeasonChain(leagueId){
+  const chain = [];
+  let currentId = leagueId.trim();
+  let guard = 0;
+  while(currentId && guard < 10){
+    guard++;
+    let league;
+    try{ league = await fetchJSON('https://api.sleeper.app/v1/league/'+currentId); }
+    catch(e){ break; }
+    if(!league || !league.league_id) break;
+    chain.push(league);
+    currentId = league.previous_league_id;
+  }
+  return chain;
+}
+
+async function fetchSeasonPicks(leagueId){
+  let drafts;
+  try{ drafts = await fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/drafts'); }
+  catch(e){ return []; }
+  if(!Array.isArray(drafts) || !drafts.length) return [];
+  // A league can have more than one draft on file (rare); use the most recently created.
+  const sorted = drafts.slice().sort((a,b)=> String(b.draft_id).localeCompare(String(a.draft_id)));
+  try{ return await fetchJSON('https://api.sleeper.app/v1/draft/'+sorted[0].draft_id+'/picks'); }
+  catch(e){ return []; }
+}
+
+// Aggregates every pick from every past season into per-position round stats —
+// tells you, for THIS specific league's actual draft behavior, when a position
+// typically dries up. That's a real signal for reach-vs-wait decisions, distinct
+// from generic ADP which reflects the whole Sleeper user base, not your league.
+function summarizeHistory(allPicks){
+  const byPos = {};
+  allPicks.forEach(pick=>{
+    const pos = pick.metadata && pick.metadata.position;
+    const round = pick.round;
+    if(!pos || !round) return;
+    if(!byPos[pos]) byPos[pos] = [];
+    byPos[pos].push(round);
+  });
+  const rows = Object.keys(byPos).map(pos=>{
+    const rounds = byPos[pos];
+    const avg = rounds.reduce((a,b)=>a+b,0) / rounds.length;
+    return { pos, count: rounds.length, avgRound: avg, earliest: Math.min(...rounds), latest: Math.max(...rounds) };
+  });
+  rows.sort((a,b)=> a.avgRound - b.avgRound);
+  return rows;
+}
+
+async function loadLeagueHistory(){
+  const input = el('historyLeagueIdInput').value.trim();
+  if(!input){ el('historyStatus').textContent = 'Enter a league ID first'; return; }
+  el('historyStatus').textContent = 'Loading…';
+  el('historyLoadBtn').disabled = true;
+  try{
+    const seasons = await resolveLeagueSeasonChain(input);
+    if(!seasons.length){
+      el('historyStatus').textContent = 'Could not find that league';
+      return;
+    }
+    const picksBySeasons = await Promise.all(seasons.map(l => fetchSeasonPicks(l.league_id)));
+    const allPicks = picksBySeasons.flat();
+    if(!allPicks.length){
+      el('historyStatus').textContent = 'Found ' + seasons.length + ' season(s) but no completed draft picks on file';
+      el('historyResults').innerHTML = '';
+      return;
+    }
+    const rows = summarizeHistory(allPicks);
+    const seasonLabel = seasons.map(l=>l.season).join(', ');
+    el('historyStatus').textContent = seasons.length + ' season(s) loaded (' + seasonLabel + ')';
+    el('historyResults').innerHTML = '<table class="history-table"><thead><tr>'
+      + '<th>Pos</th><th>Avg round</th><th>Earliest</th><th>Latest</th><th>Picks</th>'
+      + '</tr></thead><tbody>'
+      + rows.map(r => '<tr><td class="pos">'+r.pos+'</td><td>'+r.avgRound.toFixed(1)+'</td><td>Rd '+r.earliest+'</td><td>Rd '+r.latest+'</td><td>'+r.count+'</td></tr>').join('')
+      + '</tbody></table>';
+  }catch(e){
+    el('historyStatus').textContent = 'Something went wrong loading history';
+  }finally{
+    el('historyLoadBtn').disabled = false;
+  }
 }
 
 async function onConnectClick(){
