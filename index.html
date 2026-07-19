@@ -1058,23 +1058,52 @@ function disconnectSync(){
   el('syncStatus').textContent = 'Not connected';
 }
 
+// Sleeper's main player pool (loadPlayers) drops anyone with no team on file
+// (free agents / retired / not-yet-synced call-ups). If you draft one of those
+// players yourself, they'd be missing from STATE.players and auto-fill would
+// silently do nothing. Sleeper's pick objects carry a `metadata` block with the
+// player's name/position/team even for players outside the main pool, so use
+// that as a fallback and register the player on the fly instead of skipping.
+function ensurePlayerFromPick(pick){
+  if(STATE.players[pick.player_id]) return true;
+  const m = pick.metadata;
+  if(!m || !m.position) return false;
+  const p = {
+    id: pick.player_id,
+    position: m.position,
+    team: m.team || null,
+    first_name: m.first_name || '',
+    last_name: m.last_name || '',
+    search_rank: null
+  };
+  STATE.players[pick.player_id] = p;
+  STATE.playerArr.push(p);
+  return true;
+}
+
 async function pollSleeperDraft(draftId){
   try{
     const picks = await fetchJSON('https://api.sleeper.app/v1/draft/'+draftId+'/picks');
     const mySlot = parseInt(el('mySlotInput').value, 10);
     let newCount = 0;
+    let unresolved = 0;
     picks.forEach(pick=>{
       if(!pick.player_id) return;
       if(!STATE.drafted.has(pick.player_id)) newCount++;
       STATE.drafted.add(pick.player_id);
       if(!STATE.sync.processedPicks.has(pick.pick_no)){
         STATE.sync.processedPicks.add(pick.pick_no);
-        if(mySlot && pick.draft_slot === mySlot && STATE.players[pick.player_id] && !STATE.roster.includes(pick.player_id)){
-          addToRoster(pick.player_id, pick.round);
+        if(mySlot && pick.draft_slot === mySlot && !STATE.roster.includes(pick.player_id)){
+          if(ensurePlayerFromPick(pick)){
+            addToRoster(pick.player_id, pick.round);
+          } else {
+            unresolved++;
+          }
         }
       }
     });
-    el('syncStatus').textContent = 'Connected — ' + picks.length + ' picks made, synced ' + new Date().toLocaleTimeString();
+    el('syncStatus').textContent = 'Connected — ' + picks.length + ' picks made, synced ' + new Date().toLocaleTimeString()
+      + (unresolved ? ' — ' + unresolved + ' of your picks could not be matched to a player and were not added to your roster.' : '');
     renderPlayerList();
     renderRoster();
     saveLocal();
