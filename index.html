@@ -199,6 +199,7 @@
         <select id="siteSelect">
           <option value="manual">Manual — I'll mark picks myself</option>
           <option value="sleeper">Sleeper — live sync</option>
+          <option value="mfl">MyFantasyLeague</option>
           <option value="espn">ESPN</option>
           <option value="yahoo">Yahoo</option>
           <option value="nfl">NFL.com</option>
@@ -537,6 +538,8 @@ function onSiteChange(){
     el('syncNote').textContent = 'Manual mode — use "Mark taken" on any player as picks happen in your draft.';
   } else if(site === 'sleeper'){
     el('syncNote').textContent = 'Paste the draft ID from your Sleeper draft URL (the string after /draft/nfl/). Set your draft slot number to also auto-fill your own roster as you pick.';
+  } else if(site === 'mfl'){
+    el('syncNote').textContent = 'MyFantasyLeague blocks browser-based live sync by policy, so this can\'t auto-update — use "Mark taken" on players as picks happen in your MFL draft room instead.';
   } else {
     const label = {espn:'ESPN', yahoo:'Yahoo', nfl:'NFL.com'}[site];
     el('syncNote').textContent = label + ' does not expose a public live-draft feed, so live sync isn\'t available for it here — use "Mark taken" on players as they come off the board in the ' + label + ' room.';
