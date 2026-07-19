@@ -138,6 +138,7 @@
   .btn.primary:hover{background:var(--turf-bright); color:#0B1210;}
   .btn:disabled{opacity:.35; cursor:default;}
   .btn.mini{padding:4px 8px; font-size:10.5px;}
+  a.btn{text-decoration:none; display:inline-block;}
 
   /* start/sit */
   .vs-grid{display:grid; grid-template-columns:1fr auto 1fr; gap:14px; align-items:start; margin-top:18px;}
@@ -551,6 +552,11 @@ function renderStrategyNote(){
   el('strategyNote').textContent = strategyAdvice().text;
 }
 
+function researchUrl(name){
+  const q = '"' + name + '" fantasy football (site:fantasypros.com OR site:rotoballer.com OR site:walterfootball.com)';
+  return 'https://www.google.com/search?q=' + encodeURIComponent(q);
+}
+
 /* ---------- rendering: draft board ---------- */
 function buildPosFilters(){
   const wrap = el('posFilters');
@@ -592,7 +598,8 @@ function renderBestAvailable(){
     const avoid = avoidPositions.has(c.p.position);
     return '<div class="bcard'+(avoid?' avoid':'')+'"><div class="pos">'+c.label+'</div><div class="nm">'+fullName(c.p).trim()+'</div>'
     + '<div class="rk">Rank #'+c.p.search_rank+' &middot; '+(c.p.team||'FA')+(avoid?' &middot; hold off':'')+'</div>'
-    + '<button class="btn primary mini" data-add="'+c.p.id+'">Draft</button></div>';
+    + '<button class="btn primary mini" data-add="'+c.p.id+'">Draft</button>'
+    + '<a class="btn mini" href="'+researchUrl(fullName(c.p).trim())+'" target="_blank" rel="noopener">Research</a></div>';
   }).join('');
   el('bestAvail').querySelectorAll('[data-add]').forEach(b=>{
     b.onclick = ()=> addToRoster(b.dataset.add);
@@ -635,6 +642,7 @@ function renderPlayerList(){
       + (bye ? '<span class="badge bye">BYE '+bye+'</span>' : '')
       + (buzz ? '<span class="badge hot">+'+buzz+'</span>' : '')
       + injuryBadge(p)
+      + '<a class="btn mini" href="'+researchUrl(fullName(p).trim())+'" target="_blank" rel="noopener">Research</a>'
       + '<button class="btn primary mini" data-add="'+p.id+'">Draft to me</button>'
       + '<button class="btn mini" data-taken="'+p.id+'">Mark taken</button>'
       + '</li>';
@@ -848,7 +856,8 @@ function renderCompareCard(cardId, p){
     + field('Status', p.injury_status || 'Active')
     + field('Next matchup', opp ? ('vs/at ' + opp.opp + ' — ' + opp.state) : 'No live schedule data (offseason)')
     + field('24h waiver adds', buzz.toLocaleString())
-    + field('24h waiver drops', drop.toLocaleString());
+    + field('24h waiver drops', drop.toLocaleString())
+    + '<a class="btn mini" style="margin-top:8px; width:100%; text-align:center;" href="'+researchUrl(fullName(p).trim())+'" target="_blank" rel="noopener">Research this player</a>';
   card.dataset.pid = p.id;
 }
 
