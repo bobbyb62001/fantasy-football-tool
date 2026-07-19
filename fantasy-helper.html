@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CHAINS — Draft & Start/Sit Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B1210;
+    --panel:#121A16;
+    --panel-2:#161F1A;
+    --line:rgba(245,243,237,0.10);
+    --line-strong:rgba(245,243,237,0.22);
+    --chalk:#F5F3ED;
+    --chalk-dim:#A8AFA9;
+    --turf:#3D8B4C;
+    --turf-bright:#5FC26B;
+    --amber:#E8A33D;
+    --red:#C1443B;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at top, #16211B 0%, var(--bg) 60%);
+    color:var(--chalk);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+  }
+  .yard-lines{
+    position:fixed; inset:0; pointer-events:none; z-index:0; opacity:0.05;
+    background-image: repeating-linear-gradient(90deg, var(--chalk) 0 2px, transparent 2px 120px);
+  }
+  .wrap{position:relative; z-index:1; max-width:920px; margin:0 auto; padding:0 16px 60px;}
+
+  header{padding:26px 0 14px; border-bottom:1px solid var(--line-strong);}
+  .brand{display:flex; align-items:baseline; gap:10px;}
+  .brand h1{
+    font-family:'Teko',sans-serif; font-weight:700; font-size:44px; letter-spacing:2px;
+    margin:0; color:var(--chalk); line-height:1;
+  }
+  .brand h1 span{color:var(--turf-bright);}
+  .brand .tag{font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--chalk-dim); font-weight:600;}
+  .subline{margin-top:6px; font-size:13px; color:var(--chalk-dim);}
+
+  .banner{
+    margin-top:14px; padding:10px 14px; background:var(--panel-2); border:1px solid var(--line);
+    border-left:3px solid var(--amber); border-radius:2px; font-size:12.5px; color:var(--chalk-dim);
+  }
+
+  /* ticker */
+  .ticker-outer{
+    margin-top:16px; border:1px solid var(--line-strong); background:var(--panel); border-radius:3px;
+    overflow:hidden; position:relative; height:34px; display:flex; align-items:center;
+  }
+  .ticker-label{
+    flex:0 0 auto; background:var(--turf); color:#0B1210; font-family:'Teko',sans-serif; font-weight:700;
+    font-size:15px; letter-spacing:1.5px; padding:0 12px; height:100%; display:flex; align-items:center; z-index:2;
+  }
+  .ticker-track{white-space:nowrap; display:inline-block; padding-left:100%; animation:scroll 38s linear infinite;}
+  .ticker-track span{margin-right:36px; font-size:12.5px; color:var(--chalk-dim); font-variant-numeric:tabular-nums;}
+  .ticker-track b{color:var(--turf-bright); font-weight:600;}
+  @keyframes scroll{ from{transform:translateX(0);} to{transform:translateX(-100%);} }
+
+  /* tabs */
+  nav.tabs{display:flex; gap:2px; margin-top:22px; border-bottom:1px solid var(--line-strong);}
+  nav.tabs button{
+    font-family:'Teko',sans-serif; font-size:20px; letter-spacing:1px; font-weight:600;
+    background:none; border:none; color:var(--chalk-dim); padding:10px 18px 12px; cursor:pointer;
+    border-bottom:2px solid transparent; transition:color .15s, border-color .15s;
+  }
+  nav.tabs button.active{color:var(--chalk); border-bottom-color:var(--turf-bright);}
+  nav.tabs button:hover{color:var(--chalk);}
+
+  .panel{display:none; padding-top:18px;}
+  .panel.active{display:block;}
+
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  input[type=text]{
+    background:var(--panel); border:1px solid var(--line-strong); color:var(--chalk); padding:9px 12px;
+    border-radius:3px; font-family:'Inter',sans-serif; font-size:13.5px; flex:1; min-width:160px;
+  }
+  input[type=text]:focus{outline:none; border-color:var(--turf-bright);}
+  select{
+    background:var(--panel); border:1px solid var(--line-strong); color:var(--chalk); padding:9px 10px;
+    border-radius:3px; font-family:'Inter',sans-serif; font-size:13.5px;
+  }
+  .pos-filters{display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;}
+  .pos-filters button{
+    background:var(--panel); border:1px solid var(--line-strong); color:var(--chalk-dim);
+    font-family:'Teko',sans-serif; font-size:15px; letter-spacing:1px; padding:5px 12px; border-radius:2px; cursor:pointer;
+  }
+  .pos-filters button.on{background:var(--turf); color:#0B1210; border-color:var(--turf); font-weight:700;}
+
+  .status-line{font-size:12px; color:var(--chalk-dim); margin-top:10px;}
+
+  /* roster progress = "chains" */
+  .chains{margin-top:16px; padding:12px 14px; background:var(--panel); border:1px solid var(--line); border-radius:3px;}
+  .chains .head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+  .chains .head h3{font-family:'Teko',sans-serif; font-size:19px; letter-spacing:1px; margin:0; color:var(--chalk);}
+  .chains .head span{font-size:11px; color:var(--chalk-dim);}
+  .chain-track{display:flex; gap:3px;}
+  .chain-tick{flex:1; height:8px; background:var(--line-strong); border-radius:1px;}
+  .chain-tick.filled{background:var(--turf-bright);}
+  .roster-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-top:12px;}
+  .slot{
+    border:1px solid var(--line); background:var(--panel-2); border-radius:3px; padding:7px 9px; font-size:12px;
+  }
+  .slot .lbl{color:var(--chalk-dim); font-size:10px; letter-spacing:1px; text-transform:uppercase;}
+  .slot .name{color:var(--chalk); font-weight:600; margin-top:2px;}
+  .slot.empty .name{color:var(--chalk-dim); font-weight:400; font-style:italic;}
+
+  ul.plist{list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:6px;}
+  ul.plist li{
+    display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line);
+    border-radius:3px; padding:9px 12px;
+  }
+  .p-pos{
+    font-family:'Teko',sans-serif; font-weight:700; font-size:14px; width:30px; text-align:center;
+    background:var(--panel-2); border:1px solid var(--line-strong); border-radius:2px; padding:2px 0; color:var(--turf-bright);
+    flex:0 0 auto;
+  }
+  .p-info{flex:1; min-width:0;}
+  .p-name{font-weight:600; font-size:14px; color:var(--chalk);}
+  .p-meta{font-size:11.5px; color:var(--chalk-dim); margin-top:1px;}
+  .badge{font-size:10px; padding:2px 6px; border-radius:8px; font-weight:600; letter-spacing:.3px; flex:0 0 auto;}
+  .badge.hot{background:rgba(232,163,61,0.15); color:var(--amber); border:1px solid rgba(232,163,61,0.4);}
+  .badge.out{background:rgba(193,68,59,0.15); color:var(--red); border:1px solid rgba(193,68,59,0.4);}
+  .badge.q{background:rgba(232,163,61,0.1); color:var(--amber); border:1px solid rgba(232,163,61,0.3);}
+  .btn{
+    background:var(--panel-2); border:1px solid var(--line-strong); color:var(--chalk); font-size:11.5px;
+    padding:6px 10px; border-radius:3px; cursor:pointer; flex:0 0 auto; white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--turf-bright); color:var(--turf-bright);}
+  .btn.primary{background:var(--turf); border-color:var(--turf); color:#0B1210; font-weight:700;}
+  .btn.primary:hover{background:var(--turf-bright); color:#0B1210;}
+  .btn:disabled{opacity:.35; cursor:default;}
+  .btn.mini{padding:4px 8px; font-size:10.5px;}
+
+  /* start/sit */
+  .vs-grid{display:grid; grid-template-columns:1fr auto 1fr; gap:14px; align-items:start; margin-top:18px;}
+  .vs-mid{font-family:'Teko',sans-serif; font-size:26px; color:var(--chalk-dim); padding-top:70px;}
+  .compare-card{background:var(--panel); border:1px solid var(--line-strong); border-radius:4px; padding:16px;}
+  .compare-card h4{margin:0 0 10px; font-family:'Teko',sans-serif; font-size:24px; letter-spacing:1px; color:var(--chalk);}
+  .compare-card .field{display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-size:12.5px;}
+  .compare-card .field:first-of-type{border-top:none;}
+  .compare-card .field .k{color:var(--chalk-dim);}
+  .compare-card .field .v{color:var(--chalk); font-weight:600;}
+  .verdict{
+    margin-top:16px; padding:12px 14px; border-radius:3px; border:1px solid var(--line-strong);
+    background:var(--panel-2); font-size:13px; line-height:1.5;
+  }
+  .verdict b{color:var(--turf-bright);}
+  footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--line); font-size:11px; color:var(--chalk-dim); line-height:1.6;}
+  .loading{font-size:12.5px; color:var(--chalk-dim); padding:20px 0;}
+  .ac-wrap{position:relative; flex:1; min-width:160px;}
+  .ac-list{
+    position:absolute; top:100%; left:0; right:0; background:var(--panel-2); border:1px solid var(--line-strong);
+    border-top:none; max-height:230px; overflow-y:auto; z-index:30; border-radius:0 0 3px 3px;
+  }
+  .ac-item{padding:8px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:8px;}
+  .ac-item:last-child{border-bottom:none;}
+  .ac-item:hover{background:var(--panel); color:var(--turf-bright);}
+  .ac-item small{color:var(--chalk-dim); flex:0 0 auto;}
+  .sync-row select, .sync-row input{max-width:220px;}
+  #connectBtn.connected{background:var(--red); border-color:var(--red);}
+  @media (max-width:640px){
+    .vs-grid{grid-template-columns:1fr; }
+    .vs-mid{padding-top:0; text-align:center;}
+  }
+</style>
+</head>
+<body>
+<div class="yard-lines"></div>
+<div class="wrap">
+  <header>
+    <div class="brand"><h1>CHAINS<span>.</span></h1><div class="tag">Draft &amp; Start/Sit Desk</div></div>
+    <div class="subline">12-team &middot; PPR &middot; live player pool, injury designations, and add/drop buzz pulled on load</div>
+    <div class="banner" id="offseasonBanner">Loading live data…</div>
+  </header>
+
+  <div class="ticker-outer">
+    <div class="ticker-label">BUZZ</div>
+    <div class="ticker-track" id="tickerTrack"><span>Loading trending adds…</span></div>
+  </div>
+
+  <nav class="tabs">
+    <button class="active" data-tab="draft">DRAFT BOARD</button>
+    <button data-tab="startsit">START / SIT</button>
+  </nav>
+
+  <!-- DRAFT PANEL -->
+  <section class="panel active" id="panel-draft">
+    <div class="chains">
+      <div class="head"><h3>DRAFT SYNC</h3><span id="syncStatus">Not connected</span></div>
+      <div class="row sync-row" style="margin-top:8px;">
+        <select id="siteSelect">
+          <option value="manual">Manual — I'll mark picks myself</option>
+          <option value="sleeper">Sleeper — live sync</option>
+          <option value="espn">ESPN</option>
+          <option value="yahoo">Yahoo</option>
+          <option value="nfl">NFL.com</option>
+        </select>
+        <input type="text" id="draftIdInput" placeholder="Sleeper draft ID" style="display:none;">
+        <input type="text" id="mySlotInput" placeholder="My draft slot # (optional)" style="display:none;">
+        <button class="btn primary" id="connectBtn" style="display:none;">Connect</button>
+      </div>
+      <div class="status-line" id="syncNote">Pick a site above. Sleeper drafts can sync live and auto-remove picked players from the pool below; other sites are marked manually with "Mark taken" as picks happen.</div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <input type="text" id="searchInput" placeholder="Search player or team...">
+      <select id="sortSelect">
+        <option value="buzz">Sort: Buzz (trending adds)</option>
+        <option value="name">Sort: Name</option>
+        <option value="pos">Sort: Position</option>
+      </select>
+    </div>
+    <div class="pos-filters" id="posFilters"></div>
+    <div class="status-line" id="poolStatus">Loading player pool…</div>
+
+    <div class="chains">
+      <div class="head"><h3>MY ROSTER</h3><span id="rosterCount">0 / 15 filled</span></div>
+      <div class="chain-track" id="chainTrack"></div>
+      <div class="roster-grid" id="rosterGrid"></div>
+    </div>
+
+    <ul class="plist" id="playerList"></ul>
+    <div class="status-line" id="listFooter"></div>
+  </section>
+
+  <!-- START/SIT PANEL -->
+  <section class="panel" id="panel-startsit">
+    <div class="row">
+      <div class="ac-wrap">
+        <input type="text" id="ssSearchA" placeholder="Search Player A..." autocomplete="off">
+        <div class="ac-list" id="ssListA" style="display:none;"></div>
+      </div>
+      <div class="ac-wrap">
+        <input type="text" id="ssSearchB" placeholder="Search Player B..." autocomplete="off">
+        <div class="ac-list" id="ssListB" style="display:none;"></div>
+      </div>
+    </div>
+    <div class="vs-grid">
+      <div class="compare-card" id="cardA"><h4>Player A</h4><div class="field"><span class="k">—</span></div></div>
+      <div class="vs-mid">VS</div>
+      <div class="compare-card" id="cardB"><h4>Player B</h4><div class="field"><span class="k">—</span></div></div>
+    </div>
+    <div class="verdict" id="verdict">Search and pick two players above to compare injury status, matchup context, and current buzz.</div>
+  </section>
+
+  <footer id="footerNote">Loading data sources…</footer>
+</div>
+
+<script>
+const POSITIONS = ['QB','RB','WR','TE','K','DEF'];
+const ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN'];
+const FLEX_ELIGIBLE = ['RB','WR','TE'];
+
+const STATE = {
+  players: {},        // id -> player obj (filtered pool)
+  playerArr: [],       // array form for iteration
+  trendingAdd: {},     // id -> count
+  trendingDrop: {},    // id -> count
+  drafted: new Set(),  // ids marked drafted by anyone
+  roster: new Array(ROSTER_SLOTS.length).fill(null), // slot index -> player id
+  scoreboard: null,
+  posFilter: 'ALL',
+  activeTab: 'draft',
+  ssSelected: { A: null, B: null },
+  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0 }
+};
+
+function el(id){ return document.getElementById(id); }
+
+async function fetchJSON(url){
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Request failed: ' + res.status);
+  return res.json();
+}
+
+function fullName(p){
+  if(p.position === 'DEF') return p.first_name || p.team + ' Defense';
+  return (p.first_name||'') + ' ' + (p.last_name||'');
+}
+
+function injuryBadge(p){
+  const st = p.injury_status;
+  if(!st) return '';
+  if(st === 'Out' || st === 'IR' || st === 'Doubtful') return '<span class="badge out">'+st.toUpperCase()+'</span>';
+  if(st === 'Questionable' || st === 'Probable') return '<span class="badge q">'+st.toUpperCase()+'</span>';
+  return '';
+}
+
+async function loadPlayers(){
+  el('poolStatus').textContent = 'Fetching current NFL player pool from Sleeper…';
+  const raw = await fetchJSON('https://api.sleeper.app/v1/players/nfl');
+  const arr = [];
+  for(const id in raw){
+    const p = raw[id];
+    if(!p || !POSITIONS.includes(p.position)) continue;
+    if(p.position !== 'DEF' && !p.team) continue; // drop free agents / retired
+    p.id = id;
+    arr.push(p);
+    STATE.players[id] = p;
+  }
+  STATE.playerArr = arr;
+  el('poolStatus').textContent = arr.length.toLocaleString() + ' fantasy-relevant players loaded.';
+}
+
+async function loadTrending(){
+  try{
+    const adds = await fetchJSON('https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=24&limit=30');
+    adds.forEach(t => STATE.trendingAdd[t.player_id] = t.count);
+    const drops = await fetchJSON('https://api.sleeper.app/v1/players/nfl/trending/drop?lookback_hours=24&limit=30');
+    drops.forEach(t => STATE.trendingDrop[t.player_id] = t.count);
+    renderTicker();
+  }catch(e){
+    el('tickerTrack').innerHTML = '<span>Trending data unavailable right now.</span>';
+  }
+}
+
+function renderTicker(){
+  const items = Object.entries(STATE.trendingAdd)
+    .sort((a,b)=>b[1]-a[1]).slice(0,20)
+    .map(([id,count])=>{
+      const p = STATE.players[id];
+      if(!p) return null;
+      return '<span><b>&#9650; '+fullName(p).trim()+'</b> ('+p.position+' '+ (p.team||'FA') +') — added in '+count.toLocaleString()+' leagues, 24h</span>';
+    }).filter(Boolean);
+  el('tickerTrack').innerHTML = items.length ? items.join('') : '<span>No notable waiver-add spikes in the last 24h.</span>';
+}
+
+async function loadScoreboard(){
+  try{
+    STATE.scoreboard = await fetchJSON('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
+  }catch(e){ STATE.scoreboard = null; }
+}
+
+function teamNextOpponent(teamAbbr){
+  if(!STATE.scoreboard || !STATE.scoreboard.events) return null;
+  for(const ev of STATE.scoreboard.events){
+    const comp = ev.competitions && ev.competitions[0];
+    if(!comp) continue;
+    for(const c of comp.competitors){
+      if(c.team && c.team.abbreviation === teamAbbr){
+        const opp = comp.competitors.find(x => x !== c);
+        return {
+          opp: opp && opp.team ? opp.team.abbreviation : '?',
+          state: comp.status ? comp.status.type.shortDetail : '',
+          home: c.homeAway === 'home',
+          score: c.score, oppScore: opp ? opp.score : null
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/* ---------- rendering: draft board ---------- */
+function buildPosFilters(){
+  const wrap = el('posFilters');
+  const opts = ['ALL', ...POSITIONS];
+  wrap.innerHTML = opts.map(p => '<button data-pos="'+p+'" class="'+(p===STATE.posFilter?'on':'')+'">'+p+'</button>').join('');
+  wrap.querySelectorAll('button').forEach(b=>{
+    b.onclick = ()=>{ STATE.posFilter = b.dataset.pos; buildPosFilters(); renderPlayerList(); };
+  });
+}
+
+function renderPlayerList(){
+  const q = el('searchInput').value.trim().toLowerCase();
+  const sortMode = el('sortSelect').value;
+  let list = STATE.playerArr.filter(p => !STATE.drafted.has(p.id));
+  if(STATE.posFilter !== 'ALL') list = list.filter(p => p.position === STATE.posFilter);
+  if(q) list = list.filter(p => fullName(p).toLowerCase().includes(q) || (p.team||'').toLowerCase().includes(q));
+
+  list = list.slice().sort((a,b)=>{
+    if(sortMode === 'name') return fullName(a).localeCompare(fullName(b));
+    if(sortMode === 'pos') return a.position.localeCompare(b.position) || (STATE.trendingAdd[b.id]||0)-(STATE.trendingAdd[a.id]||0);
+    return (STATE.trendingAdd[b.id]||0) - (STATE.trendingAdd[a.id]||0) || fullName(a).localeCompare(fullName(b));
+  });
+
+  const shown = list.slice(0, 100);
+  el('listFooter').textContent = 'Showing ' + shown.length + ' of ' + list.length + ' available players.' + (list.length>100 ? ' Refine your search to see more.' : '');
+
+  el('playerList').innerHTML = shown.map(p=>{
+    const buzz = STATE.trendingAdd[p.id];
+    return '<li>'
+      + '<div class="p-pos">'+p.position+'</div>'
+      + '<div class="p-info"><div class="p-name">'+fullName(p).trim()+'</div>'
+      + '<div class="p-meta">'+(p.team||'FA')+(p.years_exp!=null ? ' &middot; Yr '+ (p.years_exp+1) : '')+'</div></div>'
+      + (buzz ? '<span class="badge hot">+'+buzz+'</span>' : '')
+      + injuryBadge(p)
+      + '<button class="btn primary mini" data-add="'+p.id+'">Draft to me</button>'
+      + '<button class="btn mini" data-taken="'+p.id+'">Mark taken</button>'
+      + '</li>';
+  }).join('');
+
+  el('playerList').querySelectorAll('[data-add]').forEach(b=>{
+    b.onclick = ()=> addToRoster(b.dataset.add);
+  });
+  el('playerList').querySelectorAll('[data-taken]').forEach(b=>{
+    b.onclick = ()=>{ STATE.drafted.add(b.dataset.taken); renderPlayerList(); };
+  });
+}
+
+function addToRoster(id){
+  const p = STATE.players[id];
+  if(!p) return;
+  let slotIdx = -1;
+  for(let i=0;i<ROSTER_SLOTS.length;i++){
+    if(STATE.roster[i]) continue;
+    const slot = ROSTER_SLOTS[i];
+    if(slot === p.position || (slot === 'FLEX' && FLEX_ELIGIBLE.includes(p.position)) || slot === 'BN'){
+      slotIdx = i; break;
+    }
+  }
+  if(slotIdx === -1){ alert('No open roster slot fits ' + p.position + '.'); return; }
+  STATE.roster[slotIdx] = id;
+  STATE.drafted.add(id);
+  renderRoster();
+  renderPlayerList();
+}
+
+function renderRoster(){
+  const filled = STATE.roster.filter(Boolean).length;
+  el('rosterCount').textContent = filled + ' / ' + ROSTER_SLOTS.length + ' filled';
+  el('chainTrack').innerHTML = ROSTER_SLOTS.map((_,i)=> '<div class="chain-tick '+(STATE.roster[i]?'filled':'')+'"></div>').join('');
+  el('rosterGrid').innerHTML = ROSTER_SLOTS.map((slot,i)=>{
+    const pid = STATE.roster[i];
+    const p = pid ? STATE.players[pid] : null;
+    return '<div class="slot '+(p?'':'empty')+'"><div class="lbl">'+slot+'</div><div class="name">'+(p? fullName(p).trim() : 'empty')+'</div></div>';
+  }).join('');
+}
+
+/* ---------- rendering: start/sit ---------- */
+function searchMatches(query, limit){
+  const q = query.trim().toLowerCase();
+  if(!q) return [];
+  return STATE.playerArr
+    .filter(p => fullName(p).toLowerCase().includes(q) || (p.team||'').toLowerCase().includes(q))
+    .sort((a,b)=> fullName(a).toLowerCase().indexOf(q) - fullName(b).toLowerCase().indexOf(q))
+    .slice(0, limit || 8);
+}
+
+function wireAutocomplete(inputId, listId, side){
+  const input = el(inputId), list = el(listId);
+  input.addEventListener('input', ()=>{
+    STATE.ssSelected[side] = null;
+    const matches = searchMatches(input.value, 8);
+    if(!matches.length){ list.style.display = 'none'; list.innerHTML = ''; return; }
+    list.innerHTML = matches.map(p =>
+      '<div class="ac-item" data-pid="'+p.id+'">'+fullName(p).trim()+'<small>'+p.position+' &middot; '+(p.team||'FA')+'</small></div>'
+    ).join('');
+    list.style.display = 'block';
+    list.querySelectorAll('.ac-item').forEach(item=>{
+      item.onclick = ()=>{
+        const p = STATE.players[item.dataset.pid];
+        input.value = fullName(p).trim();
+        STATE.ssSelected[side] = p.id;
+        list.style.display = 'none';
+        renderCompareCard(side === 'A' ? 'cardA' : 'cardB', p);
+        renderVerdict();
+      };
+    });
+  });
+  document.addEventListener('click', (e)=>{
+    if(e.target !== input) list.style.display = 'none';
+  });
+}
+
+function renderCompareCard(cardId, p){
+  const card = el(cardId);
+  if(!p){ card.innerHTML = '<h4>'+(cardId==='cardA'?'Player A':'Player B')+'</h4><div class="field"><span class="k">No match found. Try a full name.</span></div>'; return; }
+  const opp = p.position === 'DEF' ? teamNextOpponent(p.team) : teamNextOpponent(p.team);
+  const buzz = STATE.trendingAdd[p.id] || 0;
+  const drop = STATE.trendingDrop[p.id] || 0;
+  card.innerHTML = '<h4>'+fullName(p).trim()+'</h4>'
+    + field('Position', p.position)
+    + field('Team', p.team || 'FA')
+    + field('Status', p.injury_status || 'Active')
+    + field('Next matchup', opp ? ('vs/at ' + opp.opp + ' — ' + opp.state) : 'No live schedule data (offseason)')
+    + field('24h waiver adds', buzz.toLocaleString())
+    + field('24h waiver drops', drop.toLocaleString());
+  card.dataset.pid = p.id;
+}
+
+function field(k,v){ return '<div class="field"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
+
+function renderVerdict(){
+  const pa = el('cardA').dataset.pid ? STATE.players[el('cardA').dataset.pid] : null;
+  const pb = el('cardB').dataset.pid ? STATE.players[el('cardB').dataset.pid] : null;
+  const out = el('verdict');
+  if(!pa || !pb){ out.innerHTML = 'Search and pick two players above to compare injury status, matchup context, and current buzz.'; return; }
+  const bad = ['Out','IR','Doubtful'];
+  const aBad = bad.includes(pa.injury_status), bBad = bad.includes(pb.injury_status);
+  if(aBad && !bBad){ out.innerHTML = 'Lean <b>'+fullName(pb).trim()+'</b> — '+fullName(pa).trim()+' is listed as '+pa.injury_status+', which is the clearest signal here.'; return; }
+  if(bBad && !aBad){ out.innerHTML = 'Lean <b>'+fullName(pa).trim()+'</b> — '+fullName(pb).trim()+' is listed as '+pb.injury_status+', which is the clearest signal here.'; return; }
+  const aBuzz = STATE.trendingAdd[pa.id]||0, bBuzz = STATE.trendingAdd[pb.id]||0;
+  if(Math.abs(aBuzz-bBuzz) > 500){
+    const winner = aBuzz>bBuzz? pa : pb;
+    out.innerHTML = 'Both are healthy on paper. <b>'+fullName(winner).trim()+'</b> has notably more waiver-add momentum in the last 24h — worth weighing alongside your own matchup research.';
+    return;
+  }
+  out.innerHTML = 'No injury red flags on either side and buzz is similar — this one comes down to matchup and recent target/touch share. Check each team\'s next opponent above once the season schedule is live.';
+}
+
+/* ---------- wiring ---------- */
+function wireEvents(){
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
+    b.onclick = ()=>{
+      document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      el('panel-'+b.dataset.tab).classList.add('active');
+    };
+  });
+  el('searchInput').addEventListener('input', renderPlayerList);
+  el('sortSelect').addEventListener('change', renderPlayerList);
+  wireAutocomplete('ssSearchA', 'ssListA', 'A');
+  wireAutocomplete('ssSearchB', 'ssListB', 'B');
+
+  el('siteSelect').addEventListener('change', onSiteChange);
+  el('connectBtn').addEventListener('click', onConnectClick);
+}
+
+function onSiteChange(){
+  const site = el('siteSelect').value;
+  STATE.sync.site = site;
+  const showSleeperFields = site === 'sleeper';
+  el('draftIdInput').style.display = showSleeperFields ? 'inline-block' : 'none';
+  el('mySlotInput').style.display = showSleeperFields ? 'inline-block' : 'none';
+  el('connectBtn').style.display = showSleeperFields ? 'inline-block' : 'none';
+  if(site === 'manual'){
+    el('syncNote').textContent = 'Manual mode — use "Mark taken" on any player as picks happen in your draft.';
+  } else if(site === 'sleeper'){
+    el('syncNote').textContent = 'Paste the draft ID from your Sleeper draft URL (the string after /draft/nfl/). Set your draft slot number to also auto-fill your own roster as you pick.';
+  } else {
+    const label = {espn:'ESPN', yahoo:'Yahoo', nfl:'NFL.com'}[site];
+    el('syncNote').textContent = label + ' does not expose a public live-draft feed, so live sync isn\'t available for it here — use "Mark taken" on players as they come off the board in the ' + label + ' room.';
+  }
+  disconnectSync();
+}
+
+async function onConnectClick(){
+  if(STATE.sync.connected){ disconnectSync(); return; }
+  const draftId = el('draftIdInput').value.trim();
+  if(!draftId){ alert('Enter a Sleeper draft ID first.'); return; }
+  STATE.sync.processedPicks = new Set();
+  STATE.sync.connected = true;
+  el('connectBtn').textContent = 'Disconnect';
+  el('connectBtn').classList.add('connected');
+  await pollSleeperDraft(draftId);
+  STATE.sync.timer = setInterval(()=> pollSleeperDraft(draftId), 10000);
+}
+
+function disconnectSync(){
+  if(STATE.sync.timer) clearInterval(STATE.sync.timer);
+  STATE.sync.timer = null;
+  STATE.sync.connected = false;
+  el('connectBtn').textContent = 'Connect';
+  el('connectBtn').classList.remove('connected');
+  el('syncStatus').textContent = 'Not connected';
+}
+
+async function pollSleeperDraft(draftId){
+  try{
+    const picks = await fetchJSON('https://api.sleeper.app/v1/draft/'+draftId+'/picks');
+    const mySlot = parseInt(el('mySlotInput').value, 10);
+    let newCount = 0;
+    picks.forEach(pick=>{
+      if(!pick.player_id) return;
+      if(!STATE.drafted.has(pick.player_id)) newCount++;
+      STATE.drafted.add(pick.player_id);
+      if(!STATE.sync.processedPicks.has(pick.pick_no)){
+        STATE.sync.processedPicks.add(pick.pick_no);
+        if(mySlot && pick.draft_slot === mySlot && STATE.players[pick.player_id] && !STATE.roster.includes(pick.player_id)){
+          addToRoster(pick.player_id);
+        }
+      }
+    });
+    el('syncStatus').textContent = 'Connected — ' + picks.length + ' picks made, synced ' + new Date().toLocaleTimeString();
+    renderPlayerList();
+    renderRoster();
+  }catch(e){
+    el('syncStatus').textContent = 'Could not reach that draft ID — check it and reconnect.';
+    disconnectSync();
+  }
+}
+
+async function init(){
+  wireEvents();
+  buildPosFilters();
+  renderRoster();
+  try{
+    await loadPlayers();
+    renderPlayerList();
+  }catch(e){
+    el('poolStatus').textContent = 'Could not load the player pool right now. Try reloading.';
+  }
+  await loadTrending();
+  await loadScoreboard();
+
+  const now = new Date();
+  const inSeason = STATE.scoreboard && STATE.scoreboard.events && STATE.scoreboard.events.length > 0;
+  el('offseasonBanner').textContent = inSeason
+    ? 'Live scoreboard connected — next-opponent data below reflects the current NFL week.'
+    : 'No live games on the board right now (offseason or bye week for the league) — injury designations and waiver buzz are still live; matchup data will populate once games are scheduled.';
+
+  el('footerNote').innerHTML = 'Player pool, injury designations, and 24h waiver-wire trends: Sleeper public API. Live scores and next-opponent lookups: ESPN public scoreboard API. Both refresh on page load — reload this page for the latest data. This tool surfaces real signals (injury status, add/drop momentum, matchups) rather than a proprietary ranking algorithm, so pair it with your own judgment on depth charts and offensive schemes.';
+}
+
+init();
+</script>
+</body>
+</html>
