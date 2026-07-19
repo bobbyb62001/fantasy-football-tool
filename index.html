@@ -210,6 +210,14 @@
   <!-- DRAFT PANEL -->
   <section class="panel active" id="panel-draft">
     <div class="chains">
+      <div class="head"><h3>MY LEAGUES</h3><span id="leagueCount"></span></div>
+      <div class="row" style="margin-top:8px;">
+        <select id="leagueLabelSelect" style="flex:1;"></select>
+        <button class="btn mini" id="forgetLeagueBtn">Forget this league</button>
+      </div>
+    </div>
+
+    <div class="chains">
       <div class="head"><h3>DRAFT SYNC</h3><span id="syncStatus">Not connected</span></div>
       <div class="row sync-row" style="margin-top:8px;">
         <select id="siteSelect">
@@ -229,7 +237,6 @@
       </div>
       <div class="status-line" id="syncNote">Pick a site above. Sleeper drafts can sync live and auto-remove picked players from the pool below; other sites are marked manually with "Mark taken" as picks happen.</div>
       <div class="row sync-row" style="margin-top:10px;">
-        <input type="text" id="leagueLabelInput" placeholder="League label (optional — saves separately)">
         <select id="strategySelect">
           <option value="bpa">Strategy: Best Player Available</option>
           <option value="hero-rb">Strategy: Hero RB</option>
@@ -315,6 +322,7 @@ const STATE = {
   scoreboard: null,
   posFilter: 'ALL',
   activeTab: 'draft',
+  currentLabel: '',
   ssSelected: { A: null, B: null },
   sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0 }
 };
@@ -458,10 +466,26 @@ async function loadIdCrosswalk(){
   }catch(e){ /* crosswalk unavailable — ESPN sync will just fail gracefully */ }
 }
 
-/* ---------- local persistence (per-league via label) ---------- */
+/* ---------- local persistence (multiple leagues, chosen via dropdown) ---------- */
 function storageKey(){
-  const label = el('leagueLabelInput').value.trim().replace(/\s+/g,'_');
+  const label = (STATE.currentLabel || '').replace(/\s+/g,'_');
   return STORAGE_KEY + (label ? ':' + label : '');
+}
+
+function getKnownLabels(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY + ':__labels') || '[]'); }
+  catch(e){ return []; }
+}
+
+function saveKnownLabels(labels){
+  try{ localStorage.setItem(STORAGE_KEY + ':__labels', JSON.stringify(labels)); }
+  catch(e){ /* fine — list just won't persist */ }
+}
+
+function addKnownLabel(label){
+  if(!label) return;
+  const labels = getKnownLabels();
+  if(!labels.includes(label)){ labels.push(label); saveKnownLabels(labels); }
 }
 
 function saveLocal(){
@@ -480,15 +504,14 @@ function saveLocal(){
       leagueSize: el('leagueSizeInput').value,
       strategy: el('strategySelect').value
     }));
-    localStorage.setItem(STORAGE_KEY + ':__lastLabel', el('leagueLabelInput').value.trim());
+    localStorage.setItem(STORAGE_KEY + ':__lastLabel', STATE.currentLabel || '');
+    if(STATE.currentLabel) addKnownLabel(STATE.currentLabel);
   }catch(e){ /* storage unavailable — fine, just won't persist */ }
 }
 
 function restoreLastLabel(){
-  try{
-    const lbl = localStorage.getItem(STORAGE_KEY + ':__lastLabel');
-    if(lbl) el('leagueLabelInput').value = lbl;
-  }catch(e){ /* fine — starts blank */ }
+  try{ STATE.currentLabel = localStorage.getItem(STORAGE_KEY + ':__lastLabel') || ''; }
+  catch(e){ STATE.currentLabel = ''; }
 }
 
 function loadLocal(){
@@ -511,17 +534,58 @@ function loadLocal(){
   }catch(e){ /* corrupt or unavailable storage — start fresh */ }
 }
 
-function switchLeagueProfile(){
+function renderLeagueSelect(){
+  const labels = getKnownLabels();
+  const sel = el('leagueLabelSelect');
+  let html = '<option value="">Default (no label)</option>';
+  labels.forEach(l => html += '<option value="'+l+'">'+l+'</option>');
+  html += '<option value="__new__">+ Add new league…</option>';
+  sel.innerHTML = html;
+  sel.value = labels.includes(STATE.currentLabel) ? STATE.currentLabel : '';
+  el('leagueCount').textContent = labels.length ? (labels.length + ' saved') : '';
+  el('forgetLeagueBtn').disabled = !STATE.currentLabel;
+}
+
+function setLeague(label){
+  STATE.currentLabel = label || '';
   STATE.drafted = new Set();
   STATE.roster = new Array(ROSTER_SLOTS.length).fill(null);
   STATE.rosterMeta = new Array(ROSTER_SLOTS.length).fill(null);
   STATE.history = [];
   loadLocal();
+  renderLeagueSelect();
+  onSiteChange();
   updateUndoBtn();
   updateClock();
   renderRoster();
   renderPlayerList();
   saveLocal();
+}
+
+function onLeagueSelectChange(){
+  const v = el('leagueLabelSelect').value;
+  if(v === '__new__'){
+    const name = (prompt('Name this league (e.g. "Sleeper Keeper League"):') || '').trim();
+    if(name){
+      addKnownLabel(name);
+      setLeague(name);
+    } else {
+      renderLeagueSelect();
+    }
+    return;
+  }
+  setLeague(v);
+}
+
+function forgetLeague(){
+  const label = STATE.currentLabel;
+  if(!label) return;
+  if(!confirm('Remove "' + label + '" and delete its saved progress? This cannot be undone.')) return;
+  try{
+    localStorage.removeItem(storageKey());
+    saveKnownLabels(getKnownLabels().filter(l => l !== label));
+  }catch(e){ /* fine */ }
+  setLeague('');
 }
 
 /* ---------- draft strategy ---------- */
@@ -902,7 +966,8 @@ function wireEvents(){
   el('copyRosterBtn').addEventListener('click', copyRoster);
   el('resetBtn').addEventListener('click', resetDraft);
   el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); saveLocal(); });
-  el('leagueLabelInput').addEventListener('change', switchLeagueProfile);
+  el('leagueLabelSelect').addEventListener('change', onLeagueSelectChange);
+  el('forgetLeagueBtn').addEventListener('click', forgetLeague);
   el('strategySelect').addEventListener('change', ()=>{ renderStrategyNote(); renderPlayerList(); saveLocal(); });
 }
 
@@ -1054,6 +1119,7 @@ async function init(){
   wireEvents();
   buildPosFilters();
   restoreLastLabel();
+  renderLeagueSelect();
   loadLocal();
   onSiteChange();
   updateUndoBtn();
