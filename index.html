@@ -220,7 +220,7 @@
           <option value="yahoo">Yahoo</option>
           <option value="nfl">NFL.com</option>
         </select>
-        <input type="text" id="draftIdInput" placeholder="Sleeper draft ID" style="display:none;">
+        <input type="text" id="draftIdInput" placeholder="Sleeper league ID or draft ID" style="display:none;">
         <input type="text" id="mySlotInput" placeholder="My draft slot # (optional)" style="display:none;">
         <input type="text" id="espnLeagueIdInput" placeholder="ESPN league ID" style="display:none;">
         <input type="text" id="espnYearInput" placeholder="Season year" style="display:none;">
@@ -921,7 +921,7 @@ function onSiteChange(){
   if(site === 'manual'){
     el('syncNote').textContent = 'Manual mode — use "Mark taken" on any player as picks happen in your draft.';
   } else if(site === 'sleeper'){
-    el('syncNote').textContent = 'Paste the draft ID from your Sleeper draft URL (the string after /draft/nfl/). Set your draft slot number to also auto-fill your own roster as you pick.';
+    el('syncNote').textContent = 'Paste either your Sleeper league ID or draft ID (both work — the tool figures out which). Set your draft slot number to also auto-fill your own roster as you pick.';
   } else if(site === 'espn'){
     el('syncNote').textContent = 'Experimental: ESPN\'s fantasy API is undocumented and may block browser requests — if it connects, picks are matched to this tool\'s player pool via a public ID crosswalk (DynastyProcess.com), so a few players may not map. If it fails, this falls back to manual "Mark taken" automatically. League must be public.';
   } else if(site === 'mfl'){
@@ -933,14 +933,36 @@ function onSiteChange(){
   disconnectSync();
 }
 
+async function resolveSleeperDraftId(input){
+  const id = input.trim();
+  try{
+    const d = await fetchJSON('https://api.sleeper.app/v1/draft/'+id);
+    if(d && d.draft_id) return d.draft_id;
+  }catch(e){ /* not a valid draft id — try as a league id below */ }
+  try{
+    const drafts = await fetchJSON('https://api.sleeper.app/v1/league/'+id+'/drafts');
+    if(Array.isArray(drafts) && drafts.length){
+      const sorted = drafts.slice().sort((a,b)=> String(b.draft_id).localeCompare(String(a.draft_id)));
+      return sorted[0].draft_id;
+    }
+  }catch(e){ /* neither worked */ }
+  return null;
+}
+
 async function onConnectClick(){
   if(STATE.sync.connected){ disconnectSync(); return; }
   const site = STATE.sync.site;
   STATE.sync.processedPicks = new Set();
 
   if(site === 'sleeper'){
-    const draftId = el('draftIdInput').value.trim();
-    if(!draftId){ alert('Enter a Sleeper draft ID first.'); return; }
+    const rawId = el('draftIdInput').value.trim();
+    if(!rawId){ alert('Enter a Sleeper league ID or draft ID first.'); return; }
+    el('syncStatus').textContent = 'Looking up draft…';
+    const draftId = await resolveSleeperDraftId(rawId);
+    if(!draftId){
+      el('syncStatus').textContent = 'Could not find a draft for that ID — double check it and try again.';
+      return;
+    }
     STATE.sync.connected = true;
     el('connectBtn').textContent = 'Disconnect';
     el('connectBtn').classList.add('connected');
