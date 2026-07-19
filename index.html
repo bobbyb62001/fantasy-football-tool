@@ -123,8 +123,17 @@
     flex:0 0 auto;
   }
   .p-info{flex:1; min-width:0;}
-  .p-name{font-weight:600; font-size:14px; color:var(--chalk);}
+  .p-name{font-weight:600; font-size:14px; color:var(--chalk); cursor:pointer;}
+  .p-name:hover{color:var(--turf-bright);}
   .p-meta{font-size:11.5px; color:var(--chalk-dim); margin-top:1px;}
+  .p-card{
+    flex-basis:100%; margin-top:8px; padding-top:10px; border-top:1px solid var(--line);
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px 14px; font-size:12px;
+  }
+  .p-card .stat .lbl{color:var(--chalk-dim); font-size:10px; letter-spacing:.5px; text-transform:uppercase;}
+  .p-card .stat .val{color:var(--chalk); font-weight:600; margin-top:1px;}
+  .p-card .research-full{grid-column:1/-1; text-align:center; margin-top:2px;}
+
   .badge{font-size:10px; padding:2px 6px; border-radius:8px; font-weight:600; letter-spacing:.3px; flex:0 0 auto;}
   .badge.hot{background:rgba(232,163,61,0.15); color:var(--amber); border:1px solid rgba(232,163,61,0.4);}
   .badge.out{background:rgba(193,68,59,0.15); color:var(--red); border:1px solid rgba(193,68,59,0.4);}
@@ -324,7 +333,8 @@ const STATE = {
   activeTab: 'draft',
   currentLabel: '',
   ssSelected: { A: null, B: null },
-  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0 }
+  expandedPlayer: null, // id of the player card currently expanded in the draft board list
+  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, lastSyncedAt: null }
 };
 
 function el(id){ return document.getElementById(id); }
@@ -698,17 +708,18 @@ function renderPlayerList(){
       divider = '<div class="tier-divider">— tier break —</div>';
     }
     if(rank !== Infinity) prevRank = rank;
+    const expanded = STATE.expandedPlayer === p.id;
     const li = '<li>'
       + '<div class="p-pos">'+p.position+'</div>'
-      + '<div class="p-info"><div class="p-name">'+fullName(p).trim()+'</div>'
+      + '<div class="p-info"><div class="p-name" data-expand="'+p.id+'">'+fullName(p).trim()+'</div>'
       + '<div class="p-meta">'+(p.team||'FA')+(p.search_rank!=null?' &middot; Rank #'+p.search_rank:'')+'</div></div>'
       + (needSet.has(p.position) ? '<span class="badge need">NEED</span>' : '')
       + (bye ? '<span class="badge bye">BYE '+bye+'</span>' : '')
       + (buzz ? '<span class="badge hot">+'+buzz+'</span>' : '')
       + injuryBadge(p)
-      + '<a class="btn mini" href="'+researchUrl(fullName(p).trim())+'" target="_blank" rel="noopener">Research</a>'
       + '<button class="btn primary mini" data-add="'+p.id+'">Draft to me</button>'
       + '<button class="btn mini" data-taken="'+p.id+'">Mark taken</button>'
+      + (expanded ? playerCardHtml(p, buzz, bye) : '')
       + '</li>';
     return divider + li;
   });
@@ -722,6 +733,28 @@ function renderPlayerList(){
   el('playerList').querySelectorAll('[data-taken]').forEach(b=>{
     b.onclick = ()=> markTaken(b.dataset.taken);
   });
+  el('playerList').querySelectorAll('[data-expand]').forEach(b=>{
+    b.onclick = ()=>{ STATE.expandedPlayer = (STATE.expandedPlayer === b.dataset.expand) ? null : b.dataset.expand; renderPlayerList(); };
+  });
+}
+
+// Consolidated card: pulls together everything known about a player in one place —
+// Sleeper rank/team/bye/injury/buzz, live-sync status, and a single research link —
+// instead of leaving it scattered across small badges.
+function playerCardHtml(p, buzz, bye){
+  const injury = p.injury_status ? p.injury_status : 'Healthy';
+  const syncLine = STATE.sync.connected
+    ? 'Live sync connected (' + STATE.sync.site + ') — last updated ' + (STATE.sync.lastSyncedAt || 'just now')
+    : 'Not connected to a live draft — using Sleeper pool data only';
+  return '<div class="p-card">'
+    + '<div class="stat"><div class="lbl">Team</div><div class="val">'+(p.team||'Free agent')+'</div></div>'
+    + '<div class="stat"><div class="lbl">Sleeper rank</div><div class="val">'+(p.search_rank!=null?'#'+p.search_rank:'—')+'</div></div>'
+    + '<div class="stat"><div class="lbl">Bye week</div><div class="val">'+(bye||'—')+'</div></div>'
+    + '<div class="stat"><div class="lbl">Injury status</div><div class="val">'+injury+'</div></div>'
+    + '<div class="stat"><div class="lbl">24h waiver buzz</div><div class="val">'+(buzz?'+'+buzz+' adds':'—')+'</div></div>'
+    + '<div class="stat"><div class="lbl">Draft sync</div><div class="val">'+syncLine+'</div></div>'
+    + '<a class="btn primary research-full" href="'+researchUrl(fullName(p).trim())+'" target="_blank" rel="noopener">Research '+fullName(p).trim()+' (FantasyPros, RotoBaller, Walter Football, Draft Sharks)</a>'
+    + '</div>';
 }
 
 function markTaken(id){
@@ -1104,6 +1137,7 @@ async function pollSleeperDraft(draftId){
     });
     el('syncStatus').textContent = 'Connected — ' + picks.length + ' picks made, synced ' + new Date().toLocaleTimeString()
       + (unresolved ? ' — ' + unresolved + ' of your picks could not be matched to a player and were not added to your roster.' : '');
+    STATE.sync.lastSyncedAt = new Date().toLocaleTimeString();
     renderPlayerList();
     renderRoster();
     saveLocal();
