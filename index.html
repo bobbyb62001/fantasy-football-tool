@@ -172,6 +172,8 @@
   .roster-tools label{font-size:12px; color:var(--chalk-dim); display:flex; align-items:center; gap:5px;}
   .roster-tools input[type=text]{width:44px; padding:5px 6px; min-width:0; flex:0 0 auto; text-align:center;}
   .slot .meta{color:var(--chalk-dim); font-size:10px; margin-top:2px;}
+  .slot.empty{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+  .slot.empty .rec-btn{flex:0 0 auto;}
   #byeWarning{color:var(--red); line-height:1.6;}
   .dgrid{border-collapse:collapse; font-size:11px; white-space:nowrap;}
   .dgrid th, .dgrid td{border:1px solid var(--line); padding:6px 8px; text-align:left; min-width:92px; vertical-align:top;}
@@ -214,6 +216,7 @@
 
   <nav class="tabs">
     <button class="active" data-tab="draft">DRAFT BOARD</button>
+    <button data-tab="roster">MY ROSTER</button>
     <button data-tab="startsit">START / SIT</button>
   </nav>
 
@@ -283,6 +286,12 @@
     <div class="pos-filters" id="posFilters"></div>
     <div class="status-line" id="poolStatus">Loading player pool…</div>
 
+    <ul class="plist" id="playerList"></ul>
+    <div class="status-line" id="listFooter"></div>
+  </section>
+
+  <!-- ROSTER PANEL -->
+  <section class="panel" id="panel-roster">
     <div class="chains">
       <div class="head"><h3>MY ROSTER</h3><span id="rosterCount">0 / 15 filled</span></div>
       <div class="roster-tools">
@@ -292,12 +301,9 @@
         <button class="btn mini" id="resetBtn">Reset draft</button>
       </div>
       <div class="chain-track" id="chainTrack" style="margin-top:10px;"></div>
-      <div class="roster-grid" id="rosterGrid"></div>
       <div class="status-line" id="byeWarning"></div>
+      <div class="roster-grid" id="rosterGrid" style="grid-template-columns:1fr; margin-top:12px;"></div>
     </div>
-
-    <ul class="plist" id="playerList"></ul>
-    <div class="status-line" id="listFooter"></div>
   </section>
 
   <!-- START/SIT PANEL -->
@@ -945,6 +951,21 @@ function computeByeClashes(){
   return Object.entries(counts).filter(([w, names]) => names.length > 1);
 }
 
+function slotEligiblePositions(slot){
+  if(slot === 'FLEX') return FLEX_ELIGIBLE;
+  if(slot === 'BN') return POSITIONS;
+  return [slot];
+}
+
+function bestForSlot(slot){
+  const elig = slotEligiblePositions(slot);
+  const { avoidPositions } = strategyAdvice();
+  const pool = STATE.playerArr
+    .filter(p => !STATE.drafted.has(p.id) && elig.includes(p.position) && rankOf(p) !== Infinity)
+    .sort((a,b) => rankOf(a) - rankOf(b));
+  return pool.find(p => !avoidPositions.has(p.position)) || pool[0] || null;
+}
+
 function renderRoster(){
   const filled = STATE.roster.filter(Boolean).length;
   el('rosterCount').textContent = filled + ' / ' + ROSTER_SLOTS.length + ' filled';
@@ -952,12 +973,23 @@ function renderRoster(){
   el('rosterGrid').innerHTML = ROSTER_SLOTS.map((slot,i)=>{
     const pid = STATE.roster[i];
     const p = pid ? STATE.players[pid] : null;
-    const meta = STATE.rosterMeta[i];
-    const bye = p ? STATE.byeWeeks[p.team] : null;
-    let metaLine = '';
-    if(p && meta) metaLine = '<div class="meta">Rd '+meta.round+(bye?' &middot; Bye '+bye:'')+' &middot; keep Rd '+meta.keepCost+'</div>';
-    return '<div class="slot '+(p?'':'empty')+'"><div class="lbl">'+slot+'</div><div class="name">'+(p? fullName(p).trim() : 'empty')+'</div>'+metaLine+'</div>';
+    if(p){
+      const meta = STATE.rosterMeta[i];
+      const bye = STATE.byeWeeks[p.team];
+      let metaLine = '';
+      if(meta) metaLine = '<div class="meta">Rd '+meta.round+(bye?' &middot; Bye '+bye:'')+' &middot; keep Rd '+meta.keepCost+'</div>';
+      return '<div class="slot"><div class="lbl">'+slot+'</div><div class="name">'+fullName(p).trim()+'</div>'+metaLine+'</div>';
+    }
+    const rec = bestForSlot(slot);
+    const recHtml = rec
+      ? '<div><div class="meta">Rec: '+fullName(rec).trim()+' ('+rec.position+', '+(rec.team||'FA')+') &middot; Rank #'+rec.search_rank+'</div></div><button class="btn primary mini rec-btn" data-add="'+rec.id+'">Draft</button>'
+      : '<div class="meta">No ranked player available</div>';
+    return '<div class="slot empty"><div><div class="lbl">'+slot+'</div><div class="name">empty</div></div>'+recHtml+'</div>';
   }).join('');
+
+  el('rosterGrid').querySelectorAll('[data-add]').forEach(b=>{
+    b.onclick = ()=> addToRoster(b.dataset.add);
+  });
 
   const clashes = computeByeClashes();
   el('byeWarning').innerHTML = clashes.length
