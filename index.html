@@ -173,6 +173,12 @@
   .roster-tools input[type=text]{width:44px; padding:5px 6px; min-width:0; flex:0 0 auto; text-align:center;}
   .slot .meta{color:var(--chalk-dim); font-size:10px; margin-top:2px;}
   #byeWarning{color:var(--red); line-height:1.6;}
+  .dgrid{border-collapse:collapse; font-size:11px; white-space:nowrap;}
+  .dgrid th, .dgrid td{border:1px solid var(--line); padding:6px 8px; text-align:left; min-width:92px; vertical-align:top;}
+  .dgrid th{background:var(--panel-2); color:var(--chalk-dim); font-weight:600;}
+  .dgrid td.mine{background:rgba(63,139,76,0.18); border-color:var(--turf-bright);}
+  .dgrid td.empty{color:var(--chalk-dim); font-style:italic;}
+  .dgrid td .pk{font-size:9px; color:var(--chalk-dim); display:block; margin-top:2px;}
   .badge.need{background:rgba(232,163,61,0.18); color:var(--amber); border:1px solid rgba(232,163,61,0.5); font-weight:700;}
   .tier-divider{font-size:10px; color:var(--chalk-dim); text-align:center; padding:6px 0; letter-spacing:2px; text-transform:uppercase; opacity:.55;}
   .best-avail{display:flex; gap:8px; overflow-x:auto; padding:2px 2px 8px; margin-top:12px; -webkit-overflow-scrolling:touch;}
@@ -258,6 +264,11 @@
       <div class="status-line" id="historyList"></div>
     </div>
 
+    <div class="chains" id="gridPanel" style="display:none;">
+      <div class="head"><h3>DRAFT BOARD</h3><span id="gridStatus"></span></div>
+      <div id="gridWrap" style="overflow-x:auto; margin-top:8px;"></div>
+    </div>
+
     <div class="row" style="margin-top:16px;">
       <input type="text" id="searchInput" placeholder="Search player or team...">
       <select id="sortSelect">
@@ -335,7 +346,7 @@ const STATE = {
   activeTab: 'draft',
   currentLabel: '',
   ssSelected: { A: null, B: null },
-  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, leagueId: null }
+  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, leagueId: null, nameBySlot: {}, totalRounds: 15, leagueSizeFromDraft: null, picksBySlotRound: {} }
 };
 
 function el(id){ return document.getElementById(id); }
@@ -1113,8 +1124,10 @@ async function onConnectClick(){
     }
     STATE.sync.connected = true;
     STATE.sync.leagueId = resolved.leagueId;
+    STATE.sync.picksBySlotRound = {};
     el('connectBtn').textContent = 'Disconnect';
     el('connectBtn').classList.add('connected');
+    await loadDraftMeta(resolved.draftId, resolved.leagueId);
     await pollSleeperDraft(resolved.draftId);
     STATE.sync.timer = setInterval(()=> pollSleeperDraft(resolved.draftId), 10000);
     if(resolved.leagueId) loadLeagueHistory(resolved.leagueId);
@@ -1143,6 +1156,62 @@ function disconnectSync(){
   el('syncStatus').textContent = 'Not connected';
   el('myTurnBanner').style.display = 'none';
   el('historyPanel').style.display = 'none';
+  el('gridPanel').style.display = 'none';
+}
+
+async function loadDraftMeta(draftId, leagueId){
+  try{
+    const [draft, users, rosters] = await Promise.all([
+      fetchJSON('https://api.sleeper.app/v1/draft/'+draftId),
+      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/users') : Promise.resolve([]),
+      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/rosters') : Promise.resolve([])
+    ]);
+    STATE.sync.totalRounds = (draft.settings && draft.settings.rounds) || 15;
+    STATE.sync.leagueSizeFromDraft = draft.settings && draft.settings.teams;
+    const slotToRoster = draft.slot_to_roster_id || {};
+    const nameByRoster = {};
+    (rosters||[]).forEach(r=>{
+      const u = (users||[]).find(u => u.user_id === r.owner_id);
+      nameByRoster[r.roster_id] = u ? (u.display_name || ('Team '+r.roster_id)) : ('Team '+r.roster_id);
+    });
+    const nameBySlot = {};
+    Object.keys(slotToRoster).forEach(slot=>{
+      nameBySlot[slot] = nameByRoster[slotToRoster[slot]] || ('Slot '+slot);
+    });
+    STATE.sync.nameBySlot = nameBySlot;
+  }catch(e){ /* grid falls back to generic slot labels */ }
+}
+
+function renderDraftGrid(){
+  const leagueSize = STATE.sync.leagueSizeFromDraft || parseInt(el('leagueSizeInput').value, 10) || 12;
+  const rounds = STATE.sync.totalRounds || 15;
+  const mySlot = parseInt(el('mySlotInput').value, 10);
+  let html = '<table class="dgrid"><thead><tr><th>Rd</th>';
+  for(let s=1; s<=leagueSize; s++){
+    html += '<th>' + (STATE.sync.nameBySlot[s] || ('Slot ' + s)) + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  for(let r=1; r<=rounds; r++){
+    html += '<tr><td>' + r + '</td>';
+    for(let s=1; s<=leagueSize; s++){
+      const pick = STATE.sync.picksBySlotRound[s + '-' + r];
+      const cls = (s === mySlot) ? 'mine' : '';
+      if(pick){
+        const name = (pick.metadata && (pick.metadata.first_name || pick.metadata.last_name))
+          ? ((pick.metadata.first_name||'') + ' ' + (pick.metadata.last_name||'')).trim()
+          : (pick.player_id || '');
+        const pos = pick.metadata ? pick.metadata.position : '';
+        html += '<td class="' + cls + '">' + name + '<span class="pk">' + (pos||'') + ' &middot; Pick ' + pick.pick_no + '</span></td>';
+      } else {
+        html += '<td class="' + cls + ' empty">—</td>';
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  el('gridWrap').innerHTML = html;
+  el('gridStatus').textContent = leagueSize + ' teams &middot; ' + rounds + ' rounds';
+  el('gridPanel').style.display = 'block';
 }
 
 async function pollSleeperDraft(draftId){
@@ -1154,6 +1223,7 @@ async function pollSleeperDraft(draftId){
       if(!pick.player_id) return;
       if(!STATE.drafted.has(pick.player_id)) newCount++;
       STATE.drafted.add(pick.player_id);
+      STATE.sync.picksBySlotRound[pick.draft_slot + '-' + pick.round] = pick;
       if(!STATE.sync.processedPicks.has(pick.pick_no)){
         STATE.sync.processedPicks.add(pick.pick_no);
         if(mySlot && pick.draft_slot === mySlot && STATE.players[pick.player_id] && !STATE.roster.includes(pick.player_id)){
@@ -1164,6 +1234,7 @@ async function pollSleeperDraft(draftId){
     el('syncStatus').textContent = 'Connected — ' + picks.length + ' picks made, synced ' + new Date().toLocaleTimeString();
     renderPlayerList();
     renderRoster();
+    renderDraftGrid();
     updateClock();
     saveLocal();
   }catch(e){
