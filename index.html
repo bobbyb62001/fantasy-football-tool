@@ -163,6 +163,7 @@
   .dgrid td.empty{color:var(--chalk-dim); font-style:italic;}
   .dgrid td .pk{font-size:9px; color:var(--chalk-dim); display:block; margin-top:2px;}
   .badge.need{background:rgba(232,163,61,0.18); color:var(--amber); border:1px solid rgba(232,163,61,0.5); font-weight:700;}
+  .badge.value{background:rgba(95,194,107,0.18); color:var(--turf-bright); border:1px solid rgba(95,194,107,0.5); font-weight:700;}
   .tier-divider{font-size:10px; color:var(--chalk-dim); text-align:center; padding:6px 0; letter-spacing:2px; text-transform:uppercase; opacity:.55;}
   .best-avail{display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; padding:2px 2px 8px; margin-top:12px; -webkit-overflow-scrolling:touch; max-width:100%;}
   .best-avail .bcard{flex:0 0 auto; background:var(--panel-2); border:1px solid var(--line-strong); border-radius:3px; padding:9px 11px; min-width:118px;}
@@ -237,6 +238,7 @@
     </div>
 
     <div class="banner" id="myTurnBanner" style="display:none; border-left-color:var(--turf-bright);"></div>
+    <div class="banner" id="runBanner" style="display:none; border-left-color:var(--amber);"></div>
 
     <div class="chains" id="historyPanel" style="display:none;">
       <div class="head"><h3>LEAGUE HISTORY</h3><span id="historyStatus"></span></div>
@@ -269,6 +271,23 @@
   <!-- ROSTER PANEL -->
   <section class="panel" id="panel-roster">
     <div class="chains">
+      <div class="head"><h3>ROSTER SETTINGS</h3><span></span></div>
+      <div class="roster-tools" id="rosterConfigRow">
+        <label>QB <input type="text" id="cfgQB" value="1"></label>
+        <label>RB <input type="text" id="cfgRB" value="2"></label>
+        <label>WR <input type="text" id="cfgWR" value="2"></label>
+        <label>TE <input type="text" id="cfgTE" value="1"></label>
+        <label>FLEX <input type="text" id="cfgFLEX" value="1"></label>
+        <label>SFLEX <input type="text" id="cfgSFLEX" value="0"></label>
+        <label>K <input type="text" id="cfgK" value="1"></label>
+        <label>DEF <input type="text" id="cfgDEF" value="1"></label>
+        <label>BN <input type="text" id="cfgBN" value="6"></label>
+      </div>
+      <button class="btn primary mini" id="applyRosterCfgBtn" style="margin-top:8px;">Apply roster settings</button>
+      <div class="status-line">Match this to your real league's roster (e.g. 2 QB for superflex, no K, extra FLEX). Defaults to standard 1QB/2RB/2WR/1TE/1FLEX/1K/1DEF/6BN.</div>
+    </div>
+
+    <div class="chains">
       <div class="head"><h3>MY ROSTER</h3><span id="rosterCount">0 / 15 filled</span></div>
       <div class="roster-tools">
         <label>League size <input type="text" id="leagueSizeInput" value="12"></label>
@@ -280,6 +299,12 @@
       <div class="status-line" id="byeWarning"></div>
       <div class="roster-grid" id="rosterGrid" style="grid-template-columns:1fr; margin-top:12px;"></div>
     </div>
+
+    <div class="chains" id="summaryPanel" style="display:none;">
+      <div class="head"><h3>DRAFT SUMMARY</h3><span id="summaryStatus"></span></div>
+      <div class="status-line" id="summaryList"></div>
+      <button class="btn mini" id="copySummaryBtn" style="margin-top:8px;">Copy summary</button>
+    </div>
   </section>
 
   <footer id="footerNote">Loading data sources…</footer>
@@ -287,8 +312,9 @@
 
 <script>
 const POSITIONS = ['QB','RB','WR','TE','K','DEF'];
-const ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN'];
+const DEFAULT_ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN'];
 const FLEX_ELIGIBLE = ['RB','WR','TE'];
+const SFLEX_ELIGIBLE = ['QB','RB','WR','TE'];
 const NFL_TEAMS = ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SEA','SF','TB','TEN','WAS'];
 const STORAGE_KEY = 'chains_ff_v1';
 
@@ -298,8 +324,9 @@ const STATE = {
   trendingAdd: {},     // id -> count
   trendingDrop: {},    // id -> count
   drafted: new Set(),  // ids marked drafted by anyone
-  roster: new Array(ROSTER_SLOTS.length).fill(null), // slot index -> player id
-  rosterMeta: new Array(ROSTER_SLOTS.length).fill(null), // slot index -> {round, keepCost}
+  rosterSlots: DEFAULT_ROSTER_SLOTS.slice(), // configurable per league
+  roster: new Array(DEFAULT_ROSTER_SLOTS.length).fill(null), // slot index -> player id
+  rosterMeta: new Array(DEFAULT_ROSTER_SLOTS.length).fill(null), // slot index -> {round, keepCost}
   history: [], // undo stack: {type:'roster'|'taken', id, slotIdx}
   byeWeeks: {}, // team abbr -> week number
   espnToSleeper: {}, // espn player id (string) -> sleeper player id
@@ -455,6 +482,7 @@ function saveLocal(){
   try{
     localStorage.setItem(storageKey(), JSON.stringify({
       drafted: Array.from(STATE.drafted),
+      rosterSlots: STATE.rosterSlots,
       roster: STATE.roster,
       rosterMeta: STATE.rosterMeta,
       history: STATE.history,
@@ -483,8 +511,9 @@ function loadLocal(){
     if(!raw) return;
     const d = JSON.parse(raw);
     if(d.drafted) STATE.drafted = new Set(d.drafted);
-    if(d.roster && d.roster.length === ROSTER_SLOTS.length) STATE.roster = d.roster;
-    if(d.rosterMeta && d.rosterMeta.length === ROSTER_SLOTS.length) STATE.rosterMeta = d.rosterMeta;
+    STATE.rosterSlots = (d.rosterSlots && d.rosterSlots.length) ? d.rosterSlots : DEFAULT_ROSTER_SLOTS.slice();
+    if(d.roster && d.roster.length === STATE.rosterSlots.length) STATE.roster = d.roster;
+    if(d.rosterMeta && d.rosterMeta.length === STATE.rosterSlots.length) STATE.rosterMeta = d.rosterMeta;
     if(d.history) STATE.history = d.history;
     if(d.site) el('siteSelect').value = d.site;
     if(d.draftId) el('draftIdInput').value = d.draftId;
@@ -512,10 +541,12 @@ function renderLeagueSelect(){
 function setLeague(label){
   STATE.currentLabel = label || '';
   STATE.drafted = new Set();
-  STATE.roster = new Array(ROSTER_SLOTS.length).fill(null);
-  STATE.rosterMeta = new Array(ROSTER_SLOTS.length).fill(null);
+  STATE.rosterSlots = DEFAULT_ROSTER_SLOTS.slice();
+  STATE.roster = new Array(STATE.rosterSlots.length).fill(null);
+  STATE.rosterMeta = new Array(STATE.rosterSlots.length).fill(null);
   STATE.history = [];
   loadLocal();
+  reflectRosterConfigInputs();
   renderLeagueSelect();
   onSiteChange();
   updateUndoBtn();
@@ -596,7 +627,7 @@ function buildPosFilters(){
 
 function openPositions(){
   const need = new Set();
-  ROSTER_SLOTS.forEach((slot,i)=>{
+  STATE.rosterSlots.forEach((slot,i)=>{
     if(slot === 'BN' || STATE.roster[i]) return;
     if(slot === 'FLEX') FLEX_ELIGIBLE.forEach(p => need.add(p));
     else need.add(slot);
@@ -665,6 +696,7 @@ function renderPlayerList(){
       + '<div class="p-pos">'+p.position+'</div>'
       + '<div class="p-info"><div class="p-name">'+fullName(p).trim()
       + (needSet.has(p.position) ? ' <span class="badge need">NEED</span>' : '')
+      + (isValuePick(p) ? ' <span class="badge value">VALUE</span>' : '')
       + (bye ? ' <span class="badge bye">BYE '+bye+'</span>' : '')
       + (buzz ? ' <span class="badge hot">+'+buzz+'</span>' : '')
       + injuryBadge(p) + '</div>'
@@ -704,9 +736,9 @@ function addToRoster(id, explicitRound){
   if(!p) return;
   if(STATE.roster.includes(id)) return;
   let slotIdx = -1;
-  for(let i=0;i<ROSTER_SLOTS.length;i++){
+  for(let i=0;i<STATE.rosterSlots.length;i++){
     if(STATE.roster[i]) continue;
-    const slot = ROSTER_SLOTS[i];
+    const slot = STATE.rosterSlots[i];
     if(slot === p.position || (slot === 'FLEX' && FLEX_ELIGIBLE.includes(p.position)) || slot === 'BN'){
       slotIdx = i; break;
     }
@@ -792,6 +824,29 @@ async function loadLeagueHistory(leagueId){
   }
 }
 
+function detectRun(recentPositions){
+  const window = recentPositions.slice(0, 6);
+  const counts = {};
+  window.forEach(pos => { if(pos) counts[pos] = (counts[pos]||0) + 1; });
+  let runPos = null, runCount = 0;
+  Object.entries(counts).forEach(([pos,c])=>{ if(c >= 3 && c > runCount){ runPos = pos; runCount = c; } });
+  return runPos ? { pos: runPos, count: runCount, of: window.length } : null;
+}
+
+function renderRunBanner(run){
+  const banner = el('runBanner');
+  if(!run){ banner.style.display = 'none'; return; }
+  banner.style.display = 'block';
+  banner.innerHTML = '&#127939; <b>' + run.pos + ' run</b> — ' + run.count + ' of the last ' + run.of + ' picks were ' + run.pos + 's. Worth grabbing one now if you still need one.';
+}
+
+function isValuePick(p){
+  const rank = rankOf(p);
+  if(rank === Infinity) return false;
+  const pickNo = STATE.drafted.size + 1;
+  return (pickNo - rank) >= 15;
+}
+
 function checkMyTurn(){
   const banner = el('myTurnBanner');
   const mySlot = parseInt(el('mySlotInput').value, 10);
@@ -830,8 +885,8 @@ function updateClock(){
 function resetDraft(){
   if(!confirm('Clear your roster and all marked picks? This cannot be undone.')) return;
   STATE.drafted = new Set();
-  STATE.roster = new Array(ROSTER_SLOTS.length).fill(null);
-  STATE.rosterMeta = new Array(ROSTER_SLOTS.length).fill(null);
+  STATE.roster = new Array(STATE.rosterSlots.length).fill(null);
+  STATE.rosterMeta = new Array(STATE.rosterSlots.length).fill(null);
   STATE.history = [];
   updateUndoBtn();
   updateClock();
@@ -842,7 +897,7 @@ function resetDraft(){
 
 function buildRosterText(){
   const lines = ['MY ROSTER — CHAINS', ''];
-  ROSTER_SLOTS.forEach((slot,i)=>{
+  STATE.rosterSlots.forEach((slot,i)=>{
     const pid = STATE.roster[i];
     const p = pid ? STATE.players[pid] : null;
     const meta = STATE.rosterMeta[i];
@@ -853,10 +908,8 @@ function buildRosterText(){
   return lines.join('\n');
 }
 
-function copyRoster(){
-  const text = buildRosterText();
-  const btn = el('copyRosterBtn');
-  const done = ()=>{ btn.textContent = 'Copied!'; setTimeout(()=> btn.textContent = 'Copy roster', 1500); };
+function copyTextToClipboard(text, btn, label){
+  const done = ()=>{ btn.textContent = 'Copied!'; setTimeout(()=> btn.textContent = label, 1500); };
   const fallback = ()=>{
     const ta = document.createElement('textarea');
     ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
@@ -872,9 +925,62 @@ function copyRoster(){
   }
 }
 
+function copyRoster(){
+  copyTextToClipboard(buildRosterText(), el('copyRosterBtn'), 'Copy roster');
+}
+
+function pickGrade(round, rank, leagueSize){
+  const expected = (round - 1) * leagueSize + leagueSize / 2;
+  const diff = expected - rank;
+  if(diff >= 15) return 'Great value';
+  if(diff >= 5) return 'Good value';
+  if(diff > -5) return 'Fair';
+  if(diff > -15) return 'Slight reach';
+  return 'Reach';
+}
+
+function buildSummaryText(){
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const lines = ['DRAFT SUMMARY — CHAINS', ''];
+  STATE.rosterSlots.forEach((slot,i)=>{
+    const pid = STATE.roster[i];
+    if(!pid) return;
+    const p = STATE.players[pid];
+    const meta = STATE.rosterMeta[i];
+    if(!p || !meta || p.search_rank == null) return;
+    lines.push('Rd ' + meta.round + ' (' + slot + '): ' + fullName(p).trim() + ' — Rank #' + p.search_rank + ' — ' + pickGrade(meta.round, p.search_rank, leagueSize));
+  });
+  return lines.join('\n');
+}
+
+function renderSummary(){
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const rows = [];
+  STATE.rosterSlots.forEach((slot,i)=>{
+    const pid = STATE.roster[i];
+    if(!pid) return;
+    const p = STATE.players[pid];
+    const meta = STATE.rosterMeta[i];
+    if(!p || !meta || p.search_rank == null) return;
+    rows.push({ slot, name: fullName(p).trim(), round: meta.round, rank: p.search_rank, grade: pickGrade(meta.round, p.search_rank, leagueSize) });
+  });
+  if(!rows.length){ el('summaryPanel').style.display = 'none'; return; }
+  const filled = STATE.roster.filter(Boolean).length;
+  const complete = filled === STATE.rosterSlots.length;
+  el('summaryStatus').textContent = complete ? 'Draft complete' : (filled + '/' + STATE.rosterSlots.length + ' picks so far');
+  el('summaryList').innerHTML = rows.map(r =>
+    'Rd ' + r.round + ' (' + r.slot + '): ' + r.name + ' — Rank #' + r.rank + ' — <b>' + r.grade + '</b>'
+  ).join('<br>');
+  el('summaryPanel').style.display = 'block';
+}
+
+function copySummary(){
+  copyTextToClipboard(buildSummaryText(), el('copySummaryBtn'), 'Copy summary');
+}
+
 function computeByeClashes(){
   const counts = {};
-  ROSTER_SLOTS.forEach((slot,i)=>{
+  STATE.rosterSlots.forEach((slot,i)=>{
     if(slot === 'BN') return;
     const pid = STATE.roster[i];
     if(!pid) return;
@@ -929,8 +1035,78 @@ function buildAdvice(p){
 
 function slotEligiblePositions(slot){
   if(slot === 'FLEX') return FLEX_ELIGIBLE;
+  if(slot === 'SFLEX') return SFLEX_ELIGIBLE;
   if(slot === 'BN') return POSITIONS;
   return [slot];
+}
+
+function buildRosterSlots(counts){
+  const slots = [];
+  for(let i=0;i<counts.qb;i++) slots.push('QB');
+  for(let i=0;i<counts.rb;i++) slots.push('RB');
+  for(let i=0;i<counts.wr;i++) slots.push('WR');
+  for(let i=0;i<counts.te;i++) slots.push('TE');
+  for(let i=0;i<counts.flex;i++) slots.push('FLEX');
+  for(let i=0;i<counts.sflex;i++) slots.push('SFLEX');
+  for(let i=0;i<counts.k;i++) slots.push('K');
+  for(let i=0;i<counts.def;i++) slots.push('DEF');
+  for(let i=0;i<counts.bn;i++) slots.push('BN');
+  return slots;
+}
+
+function reflectRosterConfigInputs(){
+  const c = {qb:0,rb:0,wr:0,te:0,flex:0,sflex:0,k:0,def:0,bn:0};
+  STATE.rosterSlots.forEach(s=>{
+    if(s==='QB') c.qb++; else if(s==='RB') c.rb++; else if(s==='WR') c.wr++; else if(s==='TE') c.te++;
+    else if(s==='FLEX') c.flex++; else if(s==='SFLEX') c.sflex++; else if(s==='K') c.k++; else if(s==='DEF') c.def++; else if(s==='BN') c.bn++;
+  });
+  el('cfgQB').value=c.qb; el('cfgRB').value=c.rb; el('cfgWR').value=c.wr; el('cfgTE').value=c.te;
+  el('cfgFLEX').value=c.flex; el('cfgSFLEX').value=c.sflex; el('cfgK').value=c.k; el('cfgDEF').value=c.def; el('cfgBN').value=c.bn;
+}
+
+function placeInRoster(pid, meta){
+  const p = STATE.players[pid];
+  if(!p) return false;
+  for(let i=0;i<STATE.rosterSlots.length;i++){
+    if(STATE.roster[i]) continue;
+    if(slotEligiblePositions(STATE.rosterSlots[i]).includes(p.position)){
+      STATE.roster[i] = pid;
+      STATE.rosterMeta[i] = meta || null;
+      return true;
+    }
+  }
+  return false;
+}
+
+function applyRosterConfig(newSlots){
+  const oldEntries = STATE.roster.map((pid,i)=> pid ? {pid, meta: STATE.rosterMeta[i]} : null).filter(Boolean);
+  STATE.rosterSlots = newSlots;
+  STATE.roster = new Array(newSlots.length).fill(null);
+  STATE.rosterMeta = new Array(newSlots.length).fill(null);
+  STATE.history = [];
+  let placed = 0, dropped = 0;
+  oldEntries.forEach(e=>{ if(placeInRoster(e.pid, e.meta)) placed++; else dropped++; });
+  updateUndoBtn();
+  updateClock();
+  renderRoster();
+  renderPlayerList();
+  saveLocal();
+  return { placed, dropped };
+}
+
+function onApplyRosterConfig(){
+  const counts = {
+    qb: parseInt(el('cfgQB').value,10)||0, rb: parseInt(el('cfgRB').value,10)||0,
+    wr: parseInt(el('cfgWR').value,10)||0, te: parseInt(el('cfgTE').value,10)||0,
+    flex: parseInt(el('cfgFLEX').value,10)||0, sflex: parseInt(el('cfgSFLEX').value,10)||0,
+    k: parseInt(el('cfgK').value,10)||0, def: parseInt(el('cfgDEF').value,10)||0, bn: parseInt(el('cfgBN').value,10)||0
+  };
+  const newSlots = buildRosterSlots(counts);
+  if(!newSlots.length){ alert('Add at least one roster slot.'); return; }
+  const hasPicks = STATE.roster.some(Boolean);
+  if(hasPicks && !confirm('This re-slots your current picks into the new layout. Some may not fit and would be dropped from tracking (still marked drafted). Continue?')) return;
+  const result = applyRosterConfig(newSlots);
+  alert('Roster settings applied.' + (result.dropped ? ' ' + result.dropped + ' player(s) didn\'t fit and were dropped from roster tracking.' : ''));
 }
 
 function bestForSlot(slot){
@@ -944,9 +1120,9 @@ function bestForSlot(slot){
 
 function renderRoster(){
   const filled = STATE.roster.filter(Boolean).length;
-  el('rosterCount').textContent = filled + ' / ' + ROSTER_SLOTS.length + ' filled';
-  el('chainTrack').innerHTML = ROSTER_SLOTS.map((_,i)=> '<div class="chain-tick '+(STATE.roster[i]?'filled':'')+'"></div>').join('');
-  el('rosterGrid').innerHTML = ROSTER_SLOTS.map((slot,i)=>{
+  el('rosterCount').textContent = filled + ' / ' + STATE.rosterSlots.length + ' filled';
+  el('chainTrack').innerHTML = STATE.rosterSlots.map((_,i)=> '<div class="chain-tick '+(STATE.roster[i]?'filled':'')+'"></div>').join('');
+  el('rosterGrid').innerHTML = STATE.rosterSlots.map((slot,i)=>{
     const pid = STATE.roster[i];
     const p = pid ? STATE.players[pid] : null;
     if(p){
@@ -971,6 +1147,7 @@ function renderRoster(){
   el('byeWarning').innerHTML = clashes.length
     ? clashes.map(([w,names]) => '&#9888; Week '+w+' bye clash among starters: '+names.join(', ')).join('<br>')
     : '';
+  renderSummary();
 }
 
 /* ---------- wiring ---------- */
@@ -991,6 +1168,8 @@ function wireEvents(){
   el('undoBtn').addEventListener('click', undoLast);
   el('copyRosterBtn').addEventListener('click', copyRoster);
   el('resetBtn').addEventListener('click', resetDraft);
+  el('applyRosterCfgBtn').addEventListener('click', onApplyRosterConfig);
+  el('copySummaryBtn').addEventListener('click', copySummary);
   el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); saveLocal(); });
   el('leagueLabelSelect').addEventListener('change', onLeagueSelectChange);
   el('forgetLeagueBtn').addEventListener('click', forgetLeague);
@@ -1088,6 +1267,7 @@ function disconnectSync(){
   el('connectBtn').classList.remove('connected');
   el('syncStatus').textContent = 'Not connected';
   el('myTurnBanner').style.display = 'none';
+  el('runBanner').style.display = 'none';
   el('historyPanel').style.display = 'none';
   el('gridPanel').style.display = 'none';
 }
@@ -1165,6 +1345,8 @@ async function pollSleeperDraft(draftId){
       }
     });
     el('syncStatus').textContent = 'Connected — ' + picks.length + ' picks made, synced ' + new Date().toLocaleTimeString();
+    const recentPos = picks.slice().sort((a,b)=> b.pick_no - a.pick_no).map(p => p.metadata && p.metadata.position);
+    renderRunBanner(detectRun(recentPos));
     renderPlayerList();
     renderRoster();
     renderDraftGrid();
@@ -1196,6 +1378,10 @@ async function pollEspnDraft(leagueId, year){
       }
     });
     el('syncStatus').textContent = 'Connected — ' + matched + ' of ' + picks.length + ' ESPN picks matched, synced ' + new Date().toLocaleTimeString();
+    const recentPos = picks.slice()
+      .sort((a,b)=> (b.overallPickNumber||0) - (a.overallPickNumber||0))
+      .map(p => { const sid = STATE.espnToSleeper[String(p.playerId)]; return sid && STATE.players[sid] ? STATE.players[sid].position : null; });
+    renderRunBanner(detectRun(recentPos));
     renderPlayerList();
     renderRoster();
     saveLocal();
@@ -1228,6 +1414,7 @@ async function init(){
   restoreLastLabel();
   renderLeagueSelect();
   loadLocal();
+  reflectRosterConfigInputs();
   onSiteChange();
   updateUndoBtn();
   updateClock();
@@ -1250,7 +1437,7 @@ async function init(){
     ? 'Live scoreboard connected — next-opponent data below reflects the current NFL week.'
     : 'No live games on the board right now (offseason or bye week for the league) — injury designations and waiver buzz are still live; matchup data will populate once games are scheduled.';
 
-  el('footerNote').innerHTML = 'Player pool, injury designations, overall rank, and 24h waiver-wire trends: Sleeper public API. Live scores, next-opponent lookups, and bye weeks: ESPN public APIs. Cross-platform player ID matching for ESPN sync: DynastyProcess.com\'s open player ID database. Rank is Sleeper\'s own player ranking (their proxy for consensus value, not a proprietary projection) — it drives "Best Available," tier breaks, and default sort; a small number of deep bench players have no rank and sort last. NEED badges reflect your open starting slots. Strategy mode (Hero/Zero/Robust RB or BPA) gives live guidance based on your actual roster and round, and softly flags positions to hold off on in Best Available — it\'s a nudge, not a rule. ESPN live sync is experimental and may not connect (undocumented API); it falls back to manual tracking automatically if so. Recommendation sentences (roster slots, on-the-clock banner) are generated from rules combining rank, position scarcity, injury status, waiver buzz, and your strategy setting — not a language model, so it\'s free and consistent, but it\'s pattern logic, not judgment. Player pool, injuries, rank, buzz, scores, and bye weeks auto-refresh every 5 minutes in the background, and the "Refresh data" button pulls fresh data on demand — the timestamp above shows how current what you\'re seeing is. Progress saves automatically per league label in this browser (once hosted, not in a temporary preview) — use the league label field to keep multiple drafts separate, and "Reset draft" to start one over.';
+  el('footerNote').innerHTML = 'Player pool, injury designations, overall rank, and 24h waiver-wire trends: Sleeper public API. Live scores, next-opponent lookups, and bye weeks: ESPN public APIs. Cross-platform player ID matching for ESPN sync: DynastyProcess.com\'s open player ID database. Rank is Sleeper\'s own player ranking (their proxy for consensus value, not a proprietary projection) — it drives "Best Available," tier breaks, and default sort; a small number of deep bench players have no rank and sort last. NEED badges reflect your open starting slots. Strategy mode (Hero/Zero/Robust RB or BPA) gives live guidance based on your actual roster and round, and softly flags positions to hold off on in Best Available — it\'s a nudge, not a rule. ESPN live sync is experimental and may not connect (undocumented API); it falls back to manual tracking automatically if so. Recommendation sentences (roster slots, on-the-clock banner) are generated from rules combining rank, position scarcity, injury status, waiver buzz, and your strategy setting — not a language model, so it\'s free and consistent, but it\'s pattern logic, not judgment. Roster Settings lets you match slot counts to your real league (superflex, extra flex, no kicker, etc.) — changing it mid-draft re-slots your current picks where they fit. Run alerts flag when a position is being drafted in a cluster (3+ of the last 6 picks); VALUE badges flag players whose rank has fallen well below the current pick number. Draft Summary grades each pick against expected value for its round once you have picks tracked. Player pool, injuries, rank, buzz, scores, and bye weeks auto-refresh every 5 minutes in the background, and the "Refresh data" button pulls fresh data on demand — the timestamp above shows how current what you\'re seeing is. Progress saves automatically per league label in this browser (once hosted, not in a temporary preview) — use the league label field to keep multiple drafts separate, and "Reset draft" to start one over.';
 }
 
 init();
