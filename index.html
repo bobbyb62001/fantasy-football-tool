@@ -874,8 +874,8 @@ function checkMyTurn(){
   const top = bestAvailable()[0];
   if(!top){ banner.style.display = 'none'; return; }
   banner.style.display = 'block';
-  banner.innerHTML = '&#128276; You\'re on the clock (Pick ' + pickNo + ') — top available: <b>' + fullName(top.p).trim() + '</b> (' + top.p.position + ', ' + (top.p.team||'FA') + ') '
-    + '<button class="btn primary mini" id="quickPickBtn" style="margin-left:6px;">Quick pick</button> '
+  banner.innerHTML = '&#128276; You\'re on the clock (Pick ' + pickNo + ')<div style="margin-top:4px; font-size:12.5px;">' + buildAdvice(top.p) + '</div>'
+    + '<button class="btn primary mini" id="quickPickBtn" style="margin-top:6px;">Quick pick ' + fullName(top.p).trim() + '</button> '
     + '<div style="margin-top:4px; font-size:11px; opacity:.75;">This only updates your tracker here — still make the actual pick in Sleeper. If you draft someone else instead, tap Undo once Sleeper confirms it.</div>';
   const qb = document.getElementById('quickPickBtn');
   if(qb) qb.onclick = ()=> addToRoster(top.p.id);
@@ -951,6 +951,45 @@ function computeByeClashes(){
   return Object.entries(counts).filter(([w, names]) => names.length > 1);
 }
 
+function positionRankAmongAvailable(p){
+  const samePos = STATE.playerArr
+    .filter(x => x.position === p.position && !STATE.drafted.has(x.id) && rankOf(x) !== Infinity)
+    .sort((a,b) => rankOf(a) - rankOf(b));
+  const idx = samePos.findIndex(x => x.id === p.id);
+  return { rank: idx >= 0 ? idx + 1 : null, list: samePos, idx };
+}
+
+function buildAdvice(p){
+  const { rank: posRank, list: samePos, idx } = positionRankAmongAvailable(p);
+  let s = fullName(p).trim() + ' is the' + (posRank ? ' #' + posRank : '') + ' available ' + p.position + ' right now (overall rank #' + p.search_rank + ').';
+
+  const bad = ['Out','IR','Doubtful'];
+  if(p.injury_status && bad.includes(p.injury_status)){
+    s += ' He\'s listed as ' + p.injury_status + ' — worth confirming his status before you lock this in.';
+  } else if(p.injury_status === 'Questionable' || p.injury_status === 'Probable'){
+    s += ' He carries a ' + p.injury_status + ' tag, so keep half an eye on it.';
+  }
+
+  const buzz = STATE.trendingAdd[p.id] || 0;
+  if(buzz > 200){
+    s += ' He\'s also seeing real add momentum on waivers right now (+' + buzz.toLocaleString() + ' adds, 24h).';
+  }
+
+  const { avoidPositions } = strategyAdvice();
+  if(avoidPositions.has(p.position)){
+    s += ' Your current strategy setting says to hold off on ' + p.position + ' this round — worth a gut-check before taking him anyway.';
+  }
+
+  if(idx >= 0 && samePos[idx+1]){
+    const gap = rankOf(samePos[idx+1]) - rankOf(p);
+    s += (gap >= 10)
+      ? ' There\'s a real drop-off after him at ' + p.position + ', so this is a reasonable point to lock one in.'
+      : ' Similar value is still on the board right behind him, so there\'s no urgency if you\'d rather wait a round.';
+  }
+
+  return s;
+}
+
 function slotEligiblePositions(slot){
   if(slot === 'FLEX') return FLEX_ELIGIBLE;
   if(slot === 'BN') return POSITIONS;
@@ -982,8 +1021,8 @@ function renderRoster(){
     }
     const rec = bestForSlot(slot);
     const recHtml = rec
-      ? '<div><div class="meta">Rec: '+fullName(rec).trim()+' ('+rec.position+', '+(rec.team||'FA')+') &middot; Rank #'+rec.search_rank+'</div></div><button class="btn primary mini rec-btn" data-add="'+rec.id+'">Draft</button>'
-      : '<div class="meta">No ranked player available</div>';
+      ? '<div style="flex:1; min-width:220px;"><div class="meta" style="font-size:11.5px; line-height:1.5;">'+buildAdvice(rec)+'</div></div><button class="btn primary mini rec-btn" data-add="'+rec.id+'">Draft '+fullName(rec).trim()+'</button>'
+      : '<div class="meta">No ranked player available for this slot right now.</div>';
     return '<div class="slot empty"><div><div class="lbl">'+slot+'</div><div class="name">empty</div></div>'+recHtml+'</div>';
   }).join('');
 
@@ -1349,7 +1388,7 @@ async function init(){
     ? 'Live scoreboard connected — next-opponent data below reflects the current NFL week.'
     : 'No live games on the board right now (offseason or bye week for the league) — injury designations and waiver buzz are still live; matchup data will populate once games are scheduled.';
 
-  el('footerNote').innerHTML = 'Player pool, injury designations, overall rank, and 24h waiver-wire trends: Sleeper public API. Live scores, next-opponent lookups, and bye weeks: ESPN public APIs. Cross-platform player ID matching for ESPN sync: DynastyProcess.com\'s open player ID database. Rank is Sleeper\'s own player ranking (their proxy for consensus value, not a proprietary projection) — it drives "Best Available," tier breaks, and default sort; a small number of deep bench players have no rank and sort last. NEED badges reflect your open starting slots. Strategy mode (Hero/Zero/Robust RB or BPA) gives live guidance based on your actual roster and round, and softly flags positions to hold off on in Best Available — it\'s a nudge, not a rule. ESPN live sync is experimental and may not connect (undocumented API); it falls back to manual tracking automatically if so. Player pool, injuries, rank, buzz, scores, and bye weeks auto-refresh every 5 minutes in the background, and the "Refresh data" button pulls fresh data on demand — the timestamp above shows how current what you\'re seeing is. Progress saves automatically per league label in this browser (once hosted, not in a temporary preview) — use the league label field to keep multiple drafts separate, and "Reset draft" to start one over.';
+  el('footerNote').innerHTML = 'Player pool, injury designations, overall rank, and 24h waiver-wire trends: Sleeper public API. Live scores, next-opponent lookups, and bye weeks: ESPN public APIs. Cross-platform player ID matching for ESPN sync: DynastyProcess.com\'s open player ID database. Rank is Sleeper\'s own player ranking (their proxy for consensus value, not a proprietary projection) — it drives "Best Available," tier breaks, and default sort; a small number of deep bench players have no rank and sort last. NEED badges reflect your open starting slots. Strategy mode (Hero/Zero/Robust RB or BPA) gives live guidance based on your actual roster and round, and softly flags positions to hold off on in Best Available — it\'s a nudge, not a rule. ESPN live sync is experimental and may not connect (undocumented API); it falls back to manual tracking automatically if so. Recommendation sentences (roster slots, on-the-clock banner) are generated from rules combining rank, position scarcity, injury status, waiver buzz, and your strategy setting — not a language model, so it\'s free and consistent, but it\'s pattern logic, not judgment. Player pool, injuries, rank, buzz, scores, and bye weeks auto-refresh every 5 minutes in the background, and the "Refresh data" button pulls fresh data on demand — the timestamp above shows how current what you\'re seeing is. Progress saves automatically per league label in this browser (once hosted, not in a temporary preview) — use the league label field to keep multiple drafts separate, and "Reset draft" to start one over.';
 }
 
 init();
