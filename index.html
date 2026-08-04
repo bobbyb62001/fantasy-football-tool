@@ -208,6 +208,15 @@
     </div>
 
     <div class="chains">
+      <div class="head"><h3>RANKINGS SOURCE</h3><span id="fpStatus">Using Sleeper rank</span></div>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="fpKeyInput" placeholder="FantasyPros API key (optional)">
+        <button class="btn primary mini" id="fpConnectBtn">Use FantasyPros rankings</button>
+      </div>
+      <div class="status-line">Experimental — FantasyPros' API may block direct browser requests. If it connects, expert-consensus rank replaces Sleeper's rank everywhere in the tool; if it's blocked, this falls back to Sleeper rank automatically.</div>
+    </div>
+
+    <div class="chains">
       <div class="head"><h3>DRAFT SYNC</h3><span id="syncStatus">Not connected</span></div>
       <div class="row sync-row" style="margin-top:8px;">
         <select id="siteSelect">
@@ -305,6 +314,16 @@
       <div class="status-line" id="summaryList"></div>
       <button class="btn mini" id="copySummaryBtn" style="margin-top:8px;">Copy summary</button>
     </div>
+
+    <div class="chains">
+      <div class="head"><h3>AI ASSISTANT</h3><span id="aiStatus">Not connected</span></div>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="aiKeyInput" placeholder="Anthropic API key (sk-ant-...)">
+      </div>
+      <div class="status-line">Your key is stored only in this browser's local storage and sent directly to Anthropic from your device — never through any server of mine. Because this is a public site, anyone with access to this device/browser could see it. Only use a key you're comfortable exposing, and consider revoking it after your draft.</div>
+      <button class="btn primary mini" id="aiAskBtn" style="margin-top:8px;">Ask AI for a pick</button>
+      <div class="status-line" id="aiResponse" style="margin-top:10px; white-space:pre-wrap;"></div>
+    </div>
   </section>
 
   <footer id="footerNote">Loading data sources…</footer>
@@ -330,6 +349,7 @@ const STATE = {
   history: [], // undo stack: {type:'roster'|'taken', id, slotIdx}
   byeWeeks: {}, // team abbr -> week number
   espnToSleeper: {}, // espn player id (string) -> sleeper player id
+  fp: { connected: false, rankMap: {} }, // FantasyPros rankings, if connected
   scoreboard: null,
   posFilter: 'ALL',
   activeTab: 'draft',
@@ -454,6 +474,109 @@ async function loadIdCrosswalk(){
       if(espnId && sleeperId) STATE.espnToSleeper[espnId] = sleeperId;
     }
   }catch(e){ /* crosswalk unavailable — ESPN sync will just fail gracefully */ }
+}
+
+async function connectFantasyPros(){
+  const key = el('fpKeyInput').value.trim();
+  if(!key){ alert('Enter your FantasyPros API key first.'); return; }
+  el('fpStatus').textContent = 'Connecting…';
+  try{
+    const year = new Date().getFullYear();
+    const res = await fetch('https://api.fantasypros.com/public/v2/json/nfl/'+year+'/consensus-rankings?type=ADP&position=ALL', {
+      headers: { 'x-api-key': key }
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const list = data.players || [];
+    const map = {};
+    list.forEach(pl=>{
+      const nm = normalizeName(pl.player_name || ((pl.player_first_name||'') + ' ' + (pl.player_last_name||'')));
+      if(nm) map[nm] = { rank: pl.rank_ecr || pl.rank_ave || pl.rank, tier: pl.tier };
+    });
+    STATE.fp.rankMap = map;
+    STATE.fp.connected = true;
+    el('fpStatus').textContent = 'Connected — using FantasyPros consensus rank (' + Object.keys(map).length + ' players)';
+    renderPlayerList();
+    renderRoster();
+    saveSecrets();
+  }catch(e){
+    STATE.fp.connected = false;
+    el('fpStatus').textContent = 'Could not connect (likely blocked by browser CORS) — using Sleeper rank instead.';
+  }
+}
+
+function saveSecrets(){
+  try{
+    localStorage.setItem(STORAGE_KEY + ':__secrets', JSON.stringify({
+      fpKey: el('fpKeyInput').value,
+      aiKey: el('aiKeyInput').value
+    }));
+  }catch(e){ /* fine — keys just won't persist */ }
+}
+
+function loadSecrets(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY + ':__secrets');
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(d.fpKey) el('fpKeyInput').value = d.fpKey;
+    if(d.aiKey) el('aiKeyInput').value = d.aiKey;
+  }catch(e){ /* fine — start blank */ }
+}
+
+function buildAiPrompt(){
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const stratText = strategyAdvice().text;
+  const rosterLines = STATE.rosterSlots.map((slot,i)=>{
+    const pid = STATE.roster[i];
+    const p = pid ? STATE.players[pid] : null;
+    return slot + ': ' + (p ? fullName(p).trim() + ' (' + p.position + ')' : 'empty');
+  }).join('\n');
+  const top = STATE.playerArr
+    .filter(p => !STATE.drafted.has(p.id) && rankOf(p) !== Infinity)
+    .sort((a,b)=> rankOf(a) - rankOf(b))
+    .slice(0, 20)
+    .map(p => '#' + rankOf(p) + ' ' + fullName(p).trim() + ' (' + p.position + ', ' + (p.team||'FA') + ')' + (p.injury_status ? ' [' + p.injury_status + ']' : ''))
+    .join('\n');
+  return 'You are helping me draft in a ' + leagueSize + '-team PPR fantasy football draft. My strategy: ' + stratText
+    + '\n\nMy current roster:\n' + rosterLines
+    + '\n\nTop 20 available players by rank:\n' + top
+    + '\n\nRecommend the single best pick for me right now, with 2-3 sentences of reasoning. Be direct and specific.';
+}
+
+async function askAi(){
+  const key = el('aiKeyInput').value.trim();
+  if(!key){ alert('Enter your Anthropic API key first.'); return; }
+  el('aiStatus').textContent = 'Thinking…';
+  el('aiResponse').textContent = '';
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 400,
+        messages: [{ role: 'user', content: buildAiPrompt() }]
+      })
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      throw new Error('HTTP ' + res.status + ': ' + errText.slice(0, 200));
+    }
+    const data = await res.json();
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+    el('aiResponse').textContent = text || 'No response text returned.';
+    el('aiStatus').textContent = 'Connected';
+    saveSecrets();
+  }catch(e){
+    el('aiStatus').textContent = 'Request failed — check your API key/billing, or this may be blocked by browser security.';
+    el('aiResponse').textContent = String(e.message || e);
+  }
 }
 
 /* ---------- local persistence (multiple leagues, chosen via dropdown) ---------- */
@@ -635,7 +758,17 @@ function openPositions(){
   return need;
 }
 
-function rankOf(p){ return (p && p.search_rank != null) ? p.search_rank : Infinity; }
+function normalizeName(name){
+  return (name||'').toLowerCase().replace(/[^a-z ]/g,'').replace(/\b(jr|sr|ii|iii|iv|v)\b/g,'').trim().replace(/\s+/g,' ');
+}
+
+function rankOf(p){
+  if(STATE.fp.connected){
+    const fp = STATE.fp.rankMap[normalizeName(fullName(p))];
+    if(fp && fp.rank != null) return fp.rank;
+  }
+  return (p && p.search_rank != null) ? p.search_rank : Infinity;
+}
 
 function bestAvailable(){
   const pool = STATE.playerArr.filter(p => !STATE.drafted.has(p.id) && rankOf(p) !== Infinity);
@@ -655,7 +788,7 @@ function renderBestAvailable(){
   el('bestAvail').innerHTML = cards.map(c=>{
     const avoid = avoidPositions.has(c.p.position);
     return '<div class="bcard'+(avoid?' avoid':'')+'"><div class="pos">'+c.label+'</div><div class="nm">'+fullName(c.p).trim()+'</div>'
-    + '<div class="rk">Rank #'+c.p.search_rank+' &middot; '+(c.p.team||'FA')+(avoid?' &middot; hold off':'')+'</div>'
+    + '<div class="rk">Rank #'+rankOf(c.p)+' &middot; '+(c.p.team||'FA')+(avoid?' &middot; hold off':'')+'</div>'
     + '<button class="btn primary mini" data-add="'+c.p.id+'">Draft</button>'
     + '<a class="btn mini" href="'+researchUrl(fullName(c.p).trim())+'" target="_blank" rel="noopener">Research</a></div>';
   }).join('');
@@ -700,7 +833,7 @@ function renderPlayerList(){
       + (bye ? ' <span class="badge bye">BYE '+bye+'</span>' : '')
       + (buzz ? ' <span class="badge hot">+'+buzz+'</span>' : '')
       + injuryBadge(p) + '</div>'
-      + '<div class="p-meta">'+(p.team||'FA')+(p.search_rank!=null?' &middot; Rank #'+p.search_rank:'')+'</div></div>'
+      + '<div class="p-meta">'+(p.team||'FA')+(rankOf(p)!==Infinity?' &middot; Rank #'+rankOf(p):'')+'</div></div>'
       + '<div class="p-actions">'
       + '<a class="btn mini" href="'+researchUrl(fullName(p).trim())+'" target="_blank" rel="noopener">Research</a>'
       + '<button class="btn primary mini" data-add="'+p.id+'">Draft to me</button>'
@@ -947,8 +1080,8 @@ function buildSummaryText(){
     if(!pid) return;
     const p = STATE.players[pid];
     const meta = STATE.rosterMeta[i];
-    if(!p || !meta || p.search_rank == null) return;
-    lines.push('Rd ' + meta.round + ' (' + slot + '): ' + fullName(p).trim() + ' — Rank #' + p.search_rank + ' — ' + pickGrade(meta.round, p.search_rank, leagueSize));
+    if(!p || !meta || rankOf(p) === Infinity) return;
+    lines.push('Rd ' + meta.round + ' (' + slot + '): ' + fullName(p).trim() + ' — Rank #' + rankOf(p) + ' — ' + pickGrade(meta.round, rankOf(p), leagueSize));
   });
   return lines.join('\n');
 }
@@ -961,8 +1094,8 @@ function renderSummary(){
     if(!pid) return;
     const p = STATE.players[pid];
     const meta = STATE.rosterMeta[i];
-    if(!p || !meta || p.search_rank == null) return;
-    rows.push({ slot, name: fullName(p).trim(), round: meta.round, rank: p.search_rank, grade: pickGrade(meta.round, p.search_rank, leagueSize) });
+    if(!p || !meta || rankOf(p) === Infinity) return;
+    rows.push({ slot, name: fullName(p).trim(), round: meta.round, rank: rankOf(p), grade: pickGrade(meta.round, rankOf(p), leagueSize) });
   });
   if(!rows.length){ el('summaryPanel').style.display = 'none'; return; }
   const filled = STATE.roster.filter(Boolean).length;
@@ -1004,7 +1137,7 @@ function positionRankAmongAvailable(p){
 
 function buildAdvice(p){
   const { rank: posRank, list: samePos, idx } = positionRankAmongAvailable(p);
-  let s = fullName(p).trim() + ' is the' + (posRank ? ' #' + posRank : '') + ' available ' + p.position + ' right now (overall rank #' + p.search_rank + ').';
+  let s = fullName(p).trim() + ' is the' + (posRank ? ' #' + posRank : '') + ' available ' + p.position + ' right now (overall rank #' + rankOf(p) + ').';
 
   const bad = ['Out','IR','Doubtful'];
   if(p.injury_status && bad.includes(p.injury_status)){
@@ -1170,6 +1303,10 @@ function wireEvents(){
   el('resetBtn').addEventListener('click', resetDraft);
   el('applyRosterCfgBtn').addEventListener('click', onApplyRosterConfig);
   el('copySummaryBtn').addEventListener('click', copySummary);
+  el('fpConnectBtn').addEventListener('click', connectFantasyPros);
+  el('aiAskBtn').addEventListener('click', askAi);
+  el('fpKeyInput').addEventListener('change', saveSecrets);
+  el('aiKeyInput').addEventListener('change', saveSecrets);
   el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); saveLocal(); });
   el('leagueLabelSelect').addEventListener('change', onLeagueSelectChange);
   el('forgetLeagueBtn').addEventListener('click', forgetLeague);
@@ -1411,6 +1548,7 @@ async function refreshData(manual){
 async function init(){
   wireEvents();
   buildPosFilters();
+  loadSecrets();
   restoreLastLabel();
   renderLeagueSelect();
   loadLocal();
