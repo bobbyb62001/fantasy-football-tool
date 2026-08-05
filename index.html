@@ -284,6 +284,7 @@
       <div class="status-line">Your key is stored only in this browser's local storage and sent directly to Anthropic from your device — never through any server of mine. Because this is a public site, anyone with access to this device/browser could see it. Only use a key you're comfortable exposing, and consider revoking it after your draft.</div>
       <button class="btn primary mini" id="aiAskBtn" style="margin-top:8px;">Ask AI for a pick</button>
       <div class="status-line" id="aiResponse" style="margin-top:10px; white-space:pre-wrap;"></div>
+      <div class="status-line" id="aiUsageNote" style="margin-top:6px; opacity:.75;"></div>
     </div>
   </section>
 
@@ -343,6 +344,8 @@ const FLEX_ELIGIBLE = ['RB','WR','TE'];
 const SFLEX_ELIGIBLE = ['QB','RB','WR','TE'];
 const NFL_TEAMS = ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SEA','SF','TB','TEN','WAS'];
 const STORAGE_KEY = 'chains_ff_v1';
+const AI_PRICE_PER_M_INPUT = 3.00;  // Claude Sonnet 5 standard rate, $/1M input tokens
+const AI_PRICE_PER_M_OUTPUT = 15.00; // Claude Sonnet 5 standard rate, $/1M output tokens
 
 const STATE = {
   players: {},        // id -> player obj (filtered pool)
@@ -361,7 +364,8 @@ const STATE = {
   posFilter: 'ALL',
   activeTab: 'draft',
   currentLabel: '',
-  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, leagueId: null, nameBySlot: {}, totalRounds: 15, leagueSizeFromDraft: null, picksBySlotRound: {} }
+  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, leagueId: null, nameBySlot: {}, totalRounds: 15, leagueSizeFromDraft: null, picksBySlotRound: {} },
+  aiUsage: { calls: 0, inputTokens: 0, outputTokens: 0 }
 };
 
 function el(id){ return document.getElementById(id); }
@@ -591,6 +595,18 @@ async function askAi(){
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
     el('aiResponse').textContent = text || 'No response text returned.';
     el('aiStatus').textContent = 'Connected';
+
+    const inTok = (data.usage && data.usage.input_tokens) || 0;
+    const outTok = (data.usage && data.usage.output_tokens) || 0;
+    STATE.aiUsage.calls += 1;
+    STATE.aiUsage.inputTokens += inTok;
+    STATE.aiUsage.outputTokens += outTok;
+    const callCost = (inTok / 1e6 * AI_PRICE_PER_M_INPUT) + (outTok / 1e6 * AI_PRICE_PER_M_OUTPUT);
+    const totalCost = (STATE.aiUsage.inputTokens / 1e6 * AI_PRICE_PER_M_INPUT) + (STATE.aiUsage.outputTokens / 1e6 * AI_PRICE_PER_M_OUTPUT);
+    el('aiUsageNote').textContent = 'This call: ' + inTok + ' in / ' + outTok + ' out (~$' + callCost.toFixed(4) + ').'
+      + ' Draft total (' + STATE.aiUsage.calls + ' call' + (STATE.aiUsage.calls === 1 ? '' : 's') + '): '
+      + STATE.aiUsage.inputTokens + ' in / ' + STATE.aiUsage.outputTokens + ' out (~$' + totalCost.toFixed(3) + ').';
+
     saveSecrets();
   }catch(e){
     el('aiStatus').textContent = 'Request failed — check your API key/billing, or this may be blocked by browser security.';
@@ -1042,6 +1058,8 @@ function resetDraft(){
   STATE.roster = new Array(STATE.rosterSlots.length).fill(null);
   STATE.rosterMeta = new Array(STATE.rosterSlots.length).fill(null);
   STATE.history = [];
+  STATE.aiUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
+  el('aiUsageNote').textContent = '';
   updateUndoBtn();
   updateClock();
   renderRoster();
