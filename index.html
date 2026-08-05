@@ -275,6 +275,16 @@
 
     <ul class="plist" id="playerList"></ul>
     <div class="status-line" id="listFooter"></div>
+
+    <div class="chains">
+      <div class="head"><h3>AI ASSISTANT</h3><span id="aiStatus">Not connected</span></div>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="aiKeyInput" placeholder="Anthropic API key (sk-ant-...)">
+      </div>
+      <div class="status-line">Your key is stored only in this browser's local storage and sent directly to Anthropic from your device — never through any server of mine. Because this is a public site, anyone with access to this device/browser could see it. Only use a key you're comfortable exposing, and consider revoking it after your draft.</div>
+      <button class="btn primary mini" id="aiAskBtn" style="margin-top:8px;">Ask AI for a pick</button>
+      <div class="status-line" id="aiResponse" style="margin-top:10px; white-space:pre-wrap;"></div>
+    </div>
   </section>
 
   <!-- ROSTER PANEL -->
@@ -320,16 +330,6 @@
       <div class="head"><h3>DRAFT SUMMARY</h3><span id="summaryStatus"></span></div>
       <div class="status-line" id="summaryList"></div>
       <button class="btn mini" id="copySummaryBtn" style="margin-top:8px;">Copy summary</button>
-    </div>
-
-    <div class="chains">
-      <div class="head"><h3>AI ASSISTANT</h3><span id="aiStatus">Not connected</span></div>
-      <div class="row" style="margin-top:8px;">
-        <input type="text" id="aiKeyInput" placeholder="Anthropic API key (sk-ant-...)">
-      </div>
-      <div class="status-line">Your key is stored only in this browser's local storage and sent directly to Anthropic from your device — never through any server of mine. Because this is a public site, anyone with access to this device/browser could see it. Only use a key you're comfortable exposing, and consider revoking it after your draft.</div>
-      <button class="btn primary mini" id="aiAskBtn" style="margin-top:8px;">Ask AI for a pick</button>
-      <div class="status-line" id="aiResponse" style="margin-top:10px; white-space:pre-wrap;"></div>
     </div>
   </section>
 
