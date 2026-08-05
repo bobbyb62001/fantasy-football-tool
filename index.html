@@ -560,7 +560,8 @@ async function askAi(){
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 400,
+        max_tokens: 500,
+        thinking: { type: 'disabled' },
         messages: [{ role: 'user', content: buildAiPrompt() }]
       })
     });
