@@ -290,10 +290,10 @@
         <label>SFLEX <input type="text" id="cfgSFLEX" value="0"></label>
         <label>K <input type="text" id="cfgK" value="1"></label>
         <label>DEF <input type="text" id="cfgDEF" value="1"></label>
-        <label>BN <input type="text" id="cfgBN" value="6"></label>
+        <label>BN <input type="text" id="cfgBN" value="9"></label>
       </div>
       <button class="btn primary mini" id="applyRosterCfgBtn" style="margin-top:8px;">Apply roster settings</button>
-      <div class="status-line">Match this to your real league's roster (e.g. 2 QB for superflex, no K, extra FLEX). Defaults to standard 1QB/2RB/2WR/1TE/1FLEX/1K/1DEF/6BN.</div>
+      <div class="status-line">Match this to your real league's roster (e.g. 2 QB for superflex, no K, extra FLEX). Defaults to standard 1QB/2RB/2WR/1TE/1FLEX/1K/1DEF/9BN (16-round draft).</div>
     </div>
 
     <div class="chains">
@@ -331,7 +331,7 @@
 
 <script>
 const POSITIONS = ['QB','RB','WR','TE','K','DEF'];
-const DEFAULT_ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN'];
+const DEFAULT_ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN','BN','BN','BN'];
 const FLEX_ELIGIBLE = ['RB','WR','TE'];
 const SFLEX_ELIGIBLE = ['QB','RB','WR','TE'];
 const NFL_TEAMS = ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SEA','SF','TB','TEN','WAS'];
