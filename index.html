@@ -275,6 +275,17 @@
 
     <ul class="plist" id="playerList"></ul>
     <div class="status-line" id="listFooter"></div>
+
+    <div class="chains">
+      <div class="head"><h3>AI ASSISTANT</h3><span id="aiStatus">Not connected</span></div>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="aiKeyInput" placeholder="Anthropic API key (sk-ant-...)">
+      </div>
+      <div class="status-line">Your key is stored only in this browser's local storage and sent directly to Anthropic from your device — never through any server of mine. Because this is a public site, anyone with access to this device/browser could see it. Only use a key you're comfortable exposing, and consider revoking it after your draft.</div>
+      <button class="btn primary mini" id="aiAskBtn" style="margin-top:8px;">Ask AI for a pick</button>
+      <div class="status-line" id="aiResponse" style="margin-top:10px; white-space:pre-wrap;"></div>
+      <div class="status-line" id="aiUsageNote" style="margin-top:6px; opacity:.75;"></div>
+    </div>
   </section>
 
   <!-- ROSTER PANEL -->
@@ -290,16 +301,23 @@
         <label>SFLEX <input type="text" id="cfgSFLEX" value="0"></label>
         <label>K <input type="text" id="cfgK" value="1"></label>
         <label>DEF <input type="text" id="cfgDEF" value="1"></label>
-        <label>BN <input type="text" id="cfgBN" value="6"></label>
+        <label>BN <input type="text" id="cfgBN" value="9"></label>
       </div>
       <button class="btn primary mini" id="applyRosterCfgBtn" style="margin-top:8px;">Apply roster settings</button>
-      <div class="status-line">Match this to your real league's roster (e.g. 2 QB for superflex, no K, extra FLEX). Defaults to standard 1QB/2RB/2WR/1TE/1FLEX/1K/1DEF/6BN.</div>
+      <div class="status-line">Match this to your real league's roster (e.g. 2 QB for superflex, no K, extra FLEX). Defaults to standard 1QB/2RB/2WR/1TE/1FLEX/1K/1DEF/9BN (16-round draft).</div>
     </div>
 
     <div class="chains">
       <div class="head"><h3>MY ROSTER</h3><span id="rosterCount">0 / 15 filled</span></div>
       <div class="roster-tools">
         <label>League size <input type="text" id="leagueSizeInput" value="12"></label>
+        <label>Scoring <select id="scoringFormatSelect">
+          <option value="standard">Standard (no PPR)</option>
+          <option value="half">Half PPR (0.5)</option>
+          <option value="ppr" selected>Full PPR (1.0)</option>
+          <option value="ppr15">1.5 PPR</option>
+          <option value="ppr2">2.0 PPR / TE Premium</option>
+        </select></label>
         <button class="btn mini" id="undoBtn" disabled>Undo last pick</button>
         <button class="btn mini" id="copyRosterBtn">Copy roster</button>
         <button class="btn mini" id="resetBtn">Reset draft</button>
@@ -314,16 +332,6 @@
       <div class="status-line" id="summaryList"></div>
       <button class="btn mini" id="copySummaryBtn" style="margin-top:8px;">Copy summary</button>
     </div>
-
-    <div class="chains">
-      <div class="head"><h3>AI ASSISTANT</h3><span id="aiStatus">Not connected</span></div>
-      <div class="row" style="margin-top:8px;">
-        <input type="text" id="aiKeyInput" placeholder="Anthropic API key (sk-ant-...)">
-      </div>
-      <div class="status-line">Your key is stored only in this browser's local storage and sent directly to Anthropic from your device — never through any server of mine. Because this is a public site, anyone with access to this device/browser could see it. Only use a key you're comfortable exposing, and consider revoking it after your draft.</div>
-      <button class="btn primary mini" id="aiAskBtn" style="margin-top:8px;">Ask AI for a pick</button>
-      <div class="status-line" id="aiResponse" style="margin-top:10px; white-space:pre-wrap;"></div>
-    </div>
   </section>
 
   <footer id="footerNote">Loading data sources…</footer>
@@ -331,11 +339,13 @@
 
 <script>
 const POSITIONS = ['QB','RB','WR','TE','K','DEF'];
-const DEFAULT_ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN'];
+const DEFAULT_ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN','BN','BN','BN'];
 const FLEX_ELIGIBLE = ['RB','WR','TE'];
 const SFLEX_ELIGIBLE = ['QB','RB','WR','TE'];
 const NFL_TEAMS = ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SEA','SF','TB','TEN','WAS'];
 const STORAGE_KEY = 'chains_ff_v1';
+const AI_PRICE_PER_M_INPUT = 3.00;  // Claude Sonnet 5 standard rate, $/1M input tokens
+const AI_PRICE_PER_M_OUTPUT = 15.00; // Claude Sonnet 5 standard rate, $/1M output tokens
 
 const STATE = {
   players: {},        // id -> player obj (filtered pool)
@@ -354,7 +364,8 @@ const STATE = {
   posFilter: 'ALL',
   activeTab: 'draft',
   currentLabel: '',
-  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, leagueId: null, nameBySlot: {}, totalRounds: 15, leagueSizeFromDraft: null, picksBySlotRound: {} }
+  sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, leagueId: null, nameBySlot: {}, totalRounds: 15, leagueSizeFromDraft: null, picksBySlotRound: {} },
+  aiUsage: { calls: 0, inputTokens: 0, outputTokens: 0 }
 };
 
 function el(id){ return document.getElementById(id); }
@@ -524,6 +535,17 @@ function loadSecrets(){
   }catch(e){ /* fine — start blank */ }
 }
 
+function scoringLabel(){
+  const map = {
+    standard: 'Standard (no PPR)',
+    half: 'Half PPR (0.5 per reception)',
+    ppr: 'Full PPR (1.0 per reception)',
+    ppr15: '1.5 PPR (1.5 points per reception)',
+    ppr2: '2.0 PPR / TE Premium'
+  };
+  return map[el('scoringFormatSelect').value] || 'Full PPR (1.0 per reception)';
+}
+
 function buildAiPrompt(){
   const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
   const stratText = strategyAdvice().text;
@@ -538,10 +560,10 @@ function buildAiPrompt(){
     .slice(0, 20)
     .map(p => '#' + rankOf(p) + ' ' + fullName(p).trim() + ' (' + p.position + ', ' + (p.team||'FA') + ')' + (p.injury_status ? ' [' + p.injury_status + ']' : ''))
     .join('\n');
-  return 'You are helping me draft in a ' + leagueSize + '-team PPR fantasy football draft. My strategy: ' + stratText
+  return 'You are helping me draft in a ' + leagueSize + '-team ' + scoringLabel() + ' fantasy football draft. My strategy: ' + stratText
     + '\n\nMy current roster:\n' + rosterLines
     + '\n\nTop 20 available players by rank:\n' + top
-    + '\n\nRecommend the single best pick for me right now, with 2-3 sentences of reasoning. Be direct and specific.';
+    + '\n\nRecommend the single best pick for me right now, with 2-3 sentences of reasoning. Weigh reception volume for pass-catching RBs and slot WRs according to the scoring format above. Be direct and specific.';
 }
 
 async function askAi(){
@@ -560,7 +582,8 @@ async function askAi(){
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 400,
+        max_tokens: 500,
+        thinking: { type: 'disabled' },
         messages: [{ role: 'user', content: buildAiPrompt() }]
       })
     });
@@ -572,6 +595,18 @@ async function askAi(){
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
     el('aiResponse').textContent = text || 'No response text returned.';
     el('aiStatus').textContent = 'Connected';
+
+    const inTok = (data.usage && data.usage.input_tokens) || 0;
+    const outTok = (data.usage && data.usage.output_tokens) || 0;
+    STATE.aiUsage.calls += 1;
+    STATE.aiUsage.inputTokens += inTok;
+    STATE.aiUsage.outputTokens += outTok;
+    const callCost = (inTok / 1e6 * AI_PRICE_PER_M_INPUT) + (outTok / 1e6 * AI_PRICE_PER_M_OUTPUT);
+    const totalCost = (STATE.aiUsage.inputTokens / 1e6 * AI_PRICE_PER_M_INPUT) + (STATE.aiUsage.outputTokens / 1e6 * AI_PRICE_PER_M_OUTPUT);
+    el('aiUsageNote').textContent = 'This call: ' + inTok + ' in / ' + outTok + ' out (~$' + callCost.toFixed(4) + ').'
+      + ' Draft total (' + STATE.aiUsage.calls + ' call' + (STATE.aiUsage.calls === 1 ? '' : 's') + '): '
+      + STATE.aiUsage.inputTokens + ' in / ' + STATE.aiUsage.outputTokens + ' out (~$' + totalCost.toFixed(3) + ').';
+
     saveSecrets();
   }catch(e){
     el('aiStatus').textContent = 'Request failed — check your API key/billing, or this may be blocked by browser security.';
@@ -616,7 +651,8 @@ function saveLocal(){
       espnYear: el('espnYearInput').value,
       espnTeamId: el('espnTeamIdInput').value,
       leagueSize: el('leagueSizeInput').value,
-      strategy: el('strategySelect').value
+      strategy: el('strategySelect').value,
+      scoringFormat: el('scoringFormatSelect').value
     }));
     localStorage.setItem(STORAGE_KEY + ':__lastLabel', STATE.currentLabel || '');
     if(STATE.currentLabel) addKnownLabel(STATE.currentLabel);
@@ -646,6 +682,7 @@ function loadLocal(){
     if(d.espnTeamId) el('espnTeamIdInput').value = d.espnTeamId;
     if(d.leagueSize) el('leagueSizeInput').value = d.leagueSize;
     if(d.strategy) el('strategySelect').value = d.strategy;
+    if(d.scoringFormat) el('scoringFormatSelect').value = d.scoringFormat;
   }catch(e){ /* corrupt or unavailable storage — start fresh */ }
 }
 
@@ -1021,6 +1058,8 @@ function resetDraft(){
   STATE.roster = new Array(STATE.rosterSlots.length).fill(null);
   STATE.rosterMeta = new Array(STATE.rosterSlots.length).fill(null);
   STATE.history = [];
+  STATE.aiUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
+  el('aiUsageNote').textContent = '';
   updateUndoBtn();
   updateClock();
   renderRoster();
@@ -1308,6 +1347,7 @@ function wireEvents(){
   el('fpKeyInput').addEventListener('change', saveSecrets);
   el('aiKeyInput').addEventListener('change', saveSecrets);
   el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); saveLocal(); });
+  el('scoringFormatSelect').addEventListener('change', ()=> saveLocal());
   el('leagueLabelSelect').addEventListener('change', onLeagueSelectChange);
   el('forgetLeagueBtn').addEventListener('click', forgetLeague);
   el('strategySelect').addEventListener('change', ()=>{ renderStrategyNote(); renderPlayerList(); saveLocal(); });
@@ -1409,12 +1449,56 @@ function disconnectSync(){
   el('gridPanel').style.display = 'none';
 }
 
+function mapSleeperRosterSlot(pos){
+  const map = { QB:'QB', RB:'RB', WR:'WR', TE:'TE', FLEX:'FLEX', SUPER_FLEX:'SFLEX', K:'K', DEF:'DEF', BN:'BN' };
+  return map[pos] || null;
+}
+
+function mapSleeperScoringFormat(scoringSettings){
+  const rec = scoringSettings ? scoringSettings.rec : null;
+  if(rec == null) return null;
+  if(rec <= 0) return 'standard';
+  if(rec < 0.75) return 'half';
+  if(rec < 1.25) return 'ppr';
+  if(rec < 1.75) return 'ppr15';
+  return 'ppr2';
+}
+
+function applySleeperLeagueSettings(league){
+  if(!league) return '';
+  const notes = [];
+
+  const fmt = mapSleeperScoringFormat(league.scoring_settings);
+  if(fmt){
+    el('scoringFormatSelect').value = fmt;
+    notes.push(scoringLabel());
+  }
+
+  if(Array.isArray(league.roster_positions) && league.roster_positions.length && !STATE.roster.some(Boolean)){
+    const mapped = [];
+    let skipped = 0;
+    league.roster_positions.forEach(pos=>{
+      const s = mapSleeperRosterSlot(pos);
+      if(s) mapped.push(s); else skipped++;
+    });
+    if(mapped.length){
+      applyRosterConfig(mapped);
+      reflectRosterConfigInputs();
+      notes.push(mapped.length + '-slot roster' + (skipped ? ' (' + skipped + ' non-standard slot(s) skipped — set those manually)' : ''));
+    }
+  }
+
+  saveLocal();
+  return notes.join(', ');
+}
+
 async function loadDraftMeta(draftId, leagueId){
   try{
-    const [draft, users, rosters] = await Promise.all([
+    const [draft, users, rosters, league] = await Promise.all([
       fetchJSON('https://api.sleeper.app/v1/draft/'+draftId),
       leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/users') : Promise.resolve([]),
-      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/rosters') : Promise.resolve([])
+      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/rosters') : Promise.resolve([]),
+      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId) : Promise.resolve(null)
     ]);
     STATE.sync.totalRounds = (draft.settings && draft.settings.rounds) || 15;
     STATE.sync.leagueSizeFromDraft = draft.settings && draft.settings.teams;
@@ -1429,7 +1513,10 @@ async function loadDraftMeta(draftId, leagueId){
       nameBySlot[slot] = nameByRoster[slotToRoster[slot]] || ('Slot '+slot);
     });
     STATE.sync.nameBySlot = nameBySlot;
-  }catch(e){ /* grid falls back to generic slot labels */ }
+
+    const detected = applySleeperLeagueSettings(league);
+    if(detected) el('syncNote').textContent = 'Auto-detected from your Sleeper league: ' + detected + '.';
+  }catch(e){ /* grid falls back to generic slot labels; roster/scoring stay as manually configured */ }
 }
 
 function renderDraftGrid(){
