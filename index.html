@@ -300,6 +300,13 @@
       <div class="head"><h3>MY ROSTER</h3><span id="rosterCount">0 / 15 filled</span></div>
       <div class="roster-tools">
         <label>League size <input type="text" id="leagueSizeInput" value="12"></label>
+        <label>Scoring <select id="scoringFormatSelect">
+          <option value="standard">Standard (no PPR)</option>
+          <option value="half">Half PPR (0.5)</option>
+          <option value="ppr" selected>Full PPR (1.0)</option>
+          <option value="ppr15">1.5 PPR</option>
+          <option value="ppr2">2.0 PPR / TE Premium</option>
+        </select></label>
         <button class="btn mini" id="undoBtn" disabled>Undo last pick</button>
         <button class="btn mini" id="copyRosterBtn">Copy roster</button>
         <button class="btn mini" id="resetBtn">Reset draft</button>
@@ -524,6 +531,17 @@ function loadSecrets(){
   }catch(e){ /* fine — start blank */ }
 }
 
+function scoringLabel(){
+  const map = {
+    standard: 'Standard (no PPR)',
+    half: 'Half PPR (0.5 per reception)',
+    ppr: 'Full PPR (1.0 per reception)',
+    ppr15: '1.5 PPR (1.5 points per reception)',
+    ppr2: '2.0 PPR / TE Premium'
+  };
+  return map[el('scoringFormatSelect').value] || 'Full PPR (1.0 per reception)';
+}
+
 function buildAiPrompt(){
   const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
   const stratText = strategyAdvice().text;
@@ -538,10 +556,10 @@ function buildAiPrompt(){
     .slice(0, 20)
     .map(p => '#' + rankOf(p) + ' ' + fullName(p).trim() + ' (' + p.position + ', ' + (p.team||'FA') + ')' + (p.injury_status ? ' [' + p.injury_status + ']' : ''))
     .join('\n');
-  return 'You are helping me draft in a ' + leagueSize + '-team PPR fantasy football draft. My strategy: ' + stratText
+  return 'You are helping me draft in a ' + leagueSize + '-team ' + scoringLabel() + ' fantasy football draft. My strategy: ' + stratText
     + '\n\nMy current roster:\n' + rosterLines
     + '\n\nTop 20 available players by rank:\n' + top
-    + '\n\nRecommend the single best pick for me right now, with 2-3 sentences of reasoning. Be direct and specific.';
+    + '\n\nRecommend the single best pick for me right now, with 2-3 sentences of reasoning. Weigh reception volume for pass-catching RBs and slot WRs according to the scoring format above. Be direct and specific.';
 }
 
 async function askAi(){
@@ -617,7 +635,8 @@ function saveLocal(){
       espnYear: el('espnYearInput').value,
       espnTeamId: el('espnTeamIdInput').value,
       leagueSize: el('leagueSizeInput').value,
-      strategy: el('strategySelect').value
+      strategy: el('strategySelect').value,
+      scoringFormat: el('scoringFormatSelect').value
     }));
     localStorage.setItem(STORAGE_KEY + ':__lastLabel', STATE.currentLabel || '');
     if(STATE.currentLabel) addKnownLabel(STATE.currentLabel);
@@ -647,6 +666,7 @@ function loadLocal(){
     if(d.espnTeamId) el('espnTeamIdInput').value = d.espnTeamId;
     if(d.leagueSize) el('leagueSizeInput').value = d.leagueSize;
     if(d.strategy) el('strategySelect').value = d.strategy;
+    if(d.scoringFormat) el('scoringFormatSelect').value = d.scoringFormat;
   }catch(e){ /* corrupt or unavailable storage — start fresh */ }
 }
 
@@ -1309,6 +1329,7 @@ function wireEvents(){
   el('fpKeyInput').addEventListener('change', saveSecrets);
   el('aiKeyInput').addEventListener('change', saveSecrets);
   el('leagueSizeInput').addEventListener('change', ()=>{ updateClock(); saveLocal(); });
+  el('scoringFormatSelect').addEventListener('change', ()=> saveLocal());
   el('leagueLabelSelect').addEventListener('change', onLeagueSelectChange);
   el('forgetLeagueBtn').addEventListener('click', forgetLeague);
   el('strategySelect').addEventListener('change', ()=>{ renderStrategyNote(); renderPlayerList(); saveLocal(); });
