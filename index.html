@@ -1431,12 +1431,56 @@ function disconnectSync(){
   el('gridPanel').style.display = 'none';
 }
 
+function mapSleeperRosterSlot(pos){
+  const map = { QB:'QB', RB:'RB', WR:'WR', TE:'TE', FLEX:'FLEX', SUPER_FLEX:'SFLEX', K:'K', DEF:'DEF', BN:'BN' };
+  return map[pos] || null;
+}
+
+function mapSleeperScoringFormat(scoringSettings){
+  const rec = scoringSettings ? scoringSettings.rec : null;
+  if(rec == null) return null;
+  if(rec <= 0) return 'standard';
+  if(rec < 0.75) return 'half';
+  if(rec < 1.25) return 'ppr';
+  if(rec < 1.75) return 'ppr15';
+  return 'ppr2';
+}
+
+function applySleeperLeagueSettings(league){
+  if(!league) return '';
+  const notes = [];
+
+  const fmt = mapSleeperScoringFormat(league.scoring_settings);
+  if(fmt){
+    el('scoringFormatSelect').value = fmt;
+    notes.push(scoringLabel());
+  }
+
+  if(Array.isArray(league.roster_positions) && league.roster_positions.length && !STATE.roster.some(Boolean)){
+    const mapped = [];
+    let skipped = 0;
+    league.roster_positions.forEach(pos=>{
+      const s = mapSleeperRosterSlot(pos);
+      if(s) mapped.push(s); else skipped++;
+    });
+    if(mapped.length){
+      applyRosterConfig(mapped);
+      reflectRosterConfigInputs();
+      notes.push(mapped.length + '-slot roster' + (skipped ? ' (' + skipped + ' non-standard slot(s) skipped — set those manually)' : ''));
+    }
+  }
+
+  saveLocal();
+  return notes.join(', ');
+}
+
 async function loadDraftMeta(draftId, leagueId){
   try{
-    const [draft, users, rosters] = await Promise.all([
+    const [draft, users, rosters, league] = await Promise.all([
       fetchJSON('https://api.sleeper.app/v1/draft/'+draftId),
       leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/users') : Promise.resolve([]),
-      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/rosters') : Promise.resolve([])
+      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId+'/rosters') : Promise.resolve([]),
+      leagueId ? fetchJSON('https://api.sleeper.app/v1/league/'+leagueId) : Promise.resolve(null)
     ]);
     STATE.sync.totalRounds = (draft.settings && draft.settings.rounds) || 15;
     STATE.sync.leagueSizeFromDraft = draft.settings && draft.settings.teams;
@@ -1451,7 +1495,10 @@ async function loadDraftMeta(draftId, leagueId){
       nameBySlot[slot] = nameByRoster[slotToRoster[slot]] || ('Slot '+slot);
     });
     STATE.sync.nameBySlot = nameBySlot;
-  }catch(e){ /* grid falls back to generic slot labels */ }
+
+    const detected = applySleeperLeagueSettings(league);
+    if(detected) el('syncNote').textContent = 'Auto-detected from your Sleeper league: ' + detected + '.';
+  }catch(e){ /* grid falls back to generic slot labels; roster/scoring stay as manually configured */ }
 }
 
 function renderDraftGrid(){
