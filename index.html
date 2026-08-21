@@ -246,6 +246,17 @@
       <div class="status-line" id="strategyNote"></div>
     </div>
 
+    <div class="chains" id="planPanel">
+      <div class="head"><h3>DRAFT PLAN</h3><span id="planRoundStatus"></span></div>
+      <div class="status-line">Set a target position per round (optional) — you'll get a heads-up if you draft off-plan. Leave a round on "BPA" to take the best player regardless of position.</div>
+      <div id="planRoundsGrid" class="row" style="flex-wrap:wrap; gap:6px; margin-top:8px;"></div>
+      <div class="status-line" id="planFeedback" style="margin-top:8px;"></div>
+
+      <div class="head" style="margin-top:14px;"><h3>TARGET QUEUE</h3><span id="targetQueueCount">0 targets</span></div>
+      <div class="status-line">Tap "Target" on any player below to add them here — they'll show as taken once someone else drafts them.</div>
+      <ul class="plist" id="targetQueueList" style="margin-top:8px;"></ul>
+    </div>
+
     <div class="banner" id="myTurnBanner" style="display:none; border-left-color:var(--turf-bright);"></div>
     <div class="banner" id="runBanner" style="display:none; border-left-color:var(--amber);"></div>
 
@@ -301,10 +312,10 @@
         <label>SFLEX <input type="text" id="cfgSFLEX" value="0"></label>
         <label>K <input type="text" id="cfgK" value="1"></label>
         <label>DEF <input type="text" id="cfgDEF" value="1"></label>
-        <label>BN <input type="text" id="cfgBN" value="9"></label>
+        <label>BN <input type="text" id="cfgBN" value="7"></label>
       </div>
       <button class="btn primary mini" id="applyRosterCfgBtn" style="margin-top:8px;">Apply roster settings</button>
-      <div class="status-line">Match this to your real league's roster (e.g. 2 QB for superflex, no K, extra FLEX). Defaults to standard 1QB/2RB/2WR/1TE/1FLEX/1K/1DEF/9BN (16-round draft).</div>
+      <div class="status-line">Match this to your real league's roster (e.g. 2 QB for superflex, no K, extra FLEX). Defaults to standard 1QB/2RB/2WR/1TE/1FLEX/1K/1DEF/7BN (16-round draft).</div>
     </div>
 
     <div class="chains">
@@ -339,7 +350,7 @@
 
 <script>
 const POSITIONS = ['QB','RB','WR','TE','K','DEF'];
-const DEFAULT_ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN','BN','BN','BN'];
+const DEFAULT_ROSTER_SLOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DEF','BN','BN','BN','BN','BN','BN','BN'];
 const FLEX_ELIGIBLE = ['RB','WR','TE'];
 const SFLEX_ELIGIBLE = ['QB','RB','WR','TE'];
 const NFL_TEAMS = ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SEA','SF','TB','TEN','WAS'];
@@ -365,7 +376,9 @@ const STATE = {
   activeTab: 'draft',
   currentLabel: '',
   sync: { site: 'manual', connected: false, timer: null, processedPicks: new Set(), lastCount: 0, leagueId: null, nameBySlot: {}, totalRounds: 15, leagueSizeFromDraft: null, picksBySlotRound: {} },
-  aiUsage: { calls: 0, inputTokens: 0, outputTokens: 0 }
+  aiUsage: { calls: 0, inputTokens: 0, outputTokens: 0 },
+  targetQueue: [], // player ids the user has starred as targets, priority = add order
+  draftPlan: { positions: [] } // one entry per round: '' (BPA) | QB | RB | WR | TE | FLEX | K | DEF
 };
 
 function el(id){ return document.getElementById(id); }
@@ -652,7 +665,9 @@ function saveLocal(){
       espnTeamId: el('espnTeamIdInput').value,
       leagueSize: el('leagueSizeInput').value,
       strategy: el('strategySelect').value,
-      scoringFormat: el('scoringFormatSelect').value
+      scoringFormat: el('scoringFormatSelect').value,
+      draftPlan: STATE.draftPlan.positions,
+      targetQueue: STATE.targetQueue
     }));
     localStorage.setItem(STORAGE_KEY + ':__lastLabel', STATE.currentLabel || '');
     if(STATE.currentLabel) addKnownLabel(STATE.currentLabel);
@@ -683,6 +698,8 @@ function loadLocal(){
     if(d.leagueSize) el('leagueSizeInput').value = d.leagueSize;
     if(d.strategy) el('strategySelect').value = d.strategy;
     if(d.scoringFormat) el('scoringFormatSelect').value = d.scoringFormat;
+    STATE.draftPlan.positions = Array.isArray(d.draftPlan) ? d.draftPlan : [];
+    STATE.targetQueue = Array.isArray(d.targetQueue) ? d.targetQueue : [];
   }catch(e){ /* corrupt or unavailable storage — start fresh */ }
 }
 
@@ -705,8 +722,11 @@ function setLeague(label){
   STATE.roster = new Array(STATE.rosterSlots.length).fill(null);
   STATE.rosterMeta = new Array(STATE.rosterSlots.length).fill(null);
   STATE.history = [];
+  STATE.draftPlan = { positions: [] };
+  STATE.targetQueue = [];
   loadLocal();
   reflectRosterConfigInputs();
+  renderPlanRoundsGrid();
   renderLeagueSelect();
   onSiteChange();
   updateUndoBtn();
@@ -875,6 +895,7 @@ function renderPlayerList(){
       + '<a class="btn mini" href="'+researchUrl(fullName(p).trim())+'" target="_blank" rel="noopener">Research</a>'
       + '<button class="btn primary mini" data-add="'+p.id+'">Draft to me</button>'
       + '<button class="btn mini" data-taken="'+p.id+'">Mark taken</button>'
+      + '<button class="btn mini" data-target="'+p.id+'">'+(STATE.targetQueue.includes(p.id) ? '★ Targeted' : '☆ Target')+'</button>'
       + '</div>'
       + '</li>';
     return divider + li;
@@ -882,12 +903,16 @@ function renderPlayerList(){
   el('playerList').innerHTML = rows.join('');
 
   renderBestAvailable();
+  renderTargetQueue();
 
   el('playerList').querySelectorAll('[data-add]').forEach(b=>{
     b.onclick = ()=> addToRoster(b.dataset.add);
   });
   el('playerList').querySelectorAll('[data-taken]').forEach(b=>{
     b.onclick = ()=> markTaken(b.dataset.taken);
+  });
+  el('playerList').querySelectorAll('[data-target]').forEach(b=>{
+    b.onclick = ()=> toggleTarget(b.dataset.target);
   });
 }
 
@@ -922,6 +947,7 @@ function addToRoster(id, explicitRound){
   STATE.rosterMeta[slotIdx] = { round, keepCost };
   STATE.drafted.add(id);
   STATE.history.push({type:'roster', id, slotIdx});
+  checkPlanForPick(p, round);
   updateUndoBtn();
   updateClock();
   renderRoster();
@@ -1049,6 +1075,7 @@ function updateClock(){
   const round = Math.ceil(pickNo / leagueSize);
   el('clockStatus').textContent = 'On the clock: Round ' + round + ', Pick ' + pickNo + ' — a player drafted now would cost Round ' + Math.max(1, round-2) + ' to keep next year.';
   renderStrategyNote();
+  renderPlanStatus();
   checkMyTurn();
 }
 
@@ -1212,6 +1239,87 @@ function slotEligiblePositions(slot){
   return [slot];
 }
 
+/* ---------- draft plan: round-by-round position plan + target queue ---------- */
+function ensurePlanLength(){
+  const n = STATE.rosterSlots.length;
+  while(STATE.draftPlan.positions.length < n) STATE.draftPlan.positions.push('');
+  STATE.draftPlan.positions.length = n;
+}
+
+function renderPlanRoundsGrid(){
+  ensurePlanLength();
+  const opts = ['', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DEF'];
+  el('planRoundsGrid').innerHTML = STATE.draftPlan.positions.map((val, i)=>{
+    const optHtml = opts.map(o => '<option value="'+o+'"'+(o===val?' selected':'')+'>'+(o||'BPA')+'</option>').join('');
+    return '<label style="font-size:11px;">R'+(i+1)+' <select data-round="'+i+'">'+optHtml+'</select></label>';
+  }).join('');
+  el('planRoundsGrid').querySelectorAll('select').forEach(sel=>{
+    sel.onchange = ()=>{
+      STATE.draftPlan.positions[parseInt(sel.dataset.round, 10)] = sel.value;
+      saveLocal();
+      renderPlanStatus();
+    };
+  });
+}
+
+function currentPlanRound(){
+  const leagueSize = parseInt(el('leagueSizeInput').value, 10) || 12;
+  const pickNo = STATE.drafted.size + 1;
+  return Math.ceil(pickNo / leagueSize);
+}
+
+function renderPlanStatus(){
+  const round = currentPlanRound();
+  const planned = STATE.draftPlan.positions[round - 1] || '';
+  el('planRoundStatus').textContent = planned ? ('Round ' + round + ' plan: ' + planned) : ('Round ' + round + ': best player available');
+}
+
+function checkPlanForPick(p, round){
+  const planned = STATE.draftPlan.positions[round - 1] || '';
+  if(!planned) return;
+  const onPlan = slotEligiblePositions(planned).includes(p.position);
+  el('planFeedback').textContent = onPlan
+    ? ('On plan — Round ' + round + ' called for ' + planned + ', and you took ' + fullName(p).trim() + ' (' + p.position + ').')
+    : ('Off plan — Round ' + round + ' called for ' + planned + ', but you took ' + fullName(p).trim() + ' (' + p.position + '). No big deal if the value was there.');
+}
+
+function toggleTarget(id){
+  const idx = STATE.targetQueue.indexOf(id);
+  if(idx === -1) STATE.targetQueue.push(id); else STATE.targetQueue.splice(idx, 1);
+  saveLocal();
+  renderPlayerList();
+}
+
+function renderTargetQueue(){
+  const ids = STATE.targetQueue.slice().sort((a, b)=>{
+    const pa = STATE.players[a], pb = STATE.players[b];
+    if(!pa || !pb) return 0;
+    return rankOf(pa) - rankOf(pb);
+  });
+  el('targetQueueCount').textContent = ids.length + ' target' + (ids.length === 1 ? '' : 's');
+  if(!ids.length){
+    el('targetQueueList').innerHTML = '<li class="status-line">No targets yet — tap "Target" on players in the list below.</li>';
+    return;
+  }
+  el('targetQueueList').innerHTML = ids.map(id=>{
+    const p = STATE.players[id];
+    if(!p) return '';
+    const mine = STATE.roster.includes(id);
+    const takenByOther = STATE.drafted.has(id) && !mine;
+    const status = mine ? ' <span class="badge value">ON YOUR ROSTER</span>' : (takenByOther ? ' <span class="badge bye">DRAFTED BY OTHER</span>' : '');
+    return '<li' + ((mine||takenByOther) ? ' style="opacity:.55;"' : '') + '>'
+      + '<div class="p-pos">'+p.position+'</div>'
+      + '<div class="p-info"><div class="p-name">'+fullName(p).trim()+status+'</div>'
+      + '<div class="p-meta">'+(p.team||'FA')+(rankOf(p)!==Infinity?' &middot; Rank #'+rankOf(p):'')+'</div></div>'
+      + '<div class="p-actions">'
+      + (!mine && !takenByOther ? '<button class="btn primary mini" data-add="'+id+'">Draft to me</button>' : '')
+      + '<button class="btn mini" data-untarget="'+id+'">Remove</button>'
+      + '</div></li>';
+  }).join('');
+  el('targetQueueList').querySelectorAll('[data-add]').forEach(b=>{ b.onclick = ()=> addToRoster(b.dataset.add); });
+  el('targetQueueList').querySelectorAll('[data-untarget]').forEach(b=>{ b.onclick = ()=> toggleTarget(b.dataset.untarget); });
+}
+
 function buildRosterSlots(counts){
   const slots = [];
   for(let i=0;i<counts.qb;i++) slots.push('QB');
@@ -1258,6 +1366,7 @@ function applyRosterConfig(newSlots){
   STATE.history = [];
   let placed = 0, dropped = 0;
   oldEntries.forEach(e=>{ if(placeInRoster(e.pid, e.meta)) placed++; else dropped++; });
+  renderPlanRoundsGrid();
   updateUndoBtn();
   updateClock();
   renderRoster();
@@ -1640,6 +1749,7 @@ async function init(){
   renderLeagueSelect();
   loadLocal();
   reflectRosterConfigInputs();
+  renderPlanRoundsGrid();
   onSiteChange();
   updateUndoBtn();
   updateClock();
